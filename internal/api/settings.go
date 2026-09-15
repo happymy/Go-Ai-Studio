@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"kt-ai-studio/internal/db"
 	"kt-ai-studio/internal/models"
@@ -402,12 +403,21 @@ func getConfiguredGlobalSeed() int64 {
 		}
 		seed, err := strconv.ParseInt(strings.TrimSpace(s.Value), 10, 64)
 		if err == nil {
-			return seed
+			return normalizeGlobalSeed(seed)
 		}
 		break
 	}
 
 	seed, _ := strconv.ParseInt(defaultSettingValue(KeyGlobalSeed), 10, 64)
+	return normalizeGlobalSeed(seed)
+}
+
+// normalizeGlobalSeed 将非法(<=0, 默认 -1 表示未配置/随机)的种子转为随机正数，
+// 确保写入 KSampler.seed 时通过 ComfyUI 的 min=0 校验。
+func normalizeGlobalSeed(seed int64) int64 {
+	if seed <= 0 {
+		seed = time.Now().UnixNano()
+	}
 	return seed
 }
 
