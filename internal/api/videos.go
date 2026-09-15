@@ -1412,16 +1412,14 @@ func triggerVideoGeneration(video models.Video) (string, error) {
 	}
 
 	// Inject Input Image (Scene Generated Image)
-	// Need to find LoadImage node or similar. Video workflows usually take an image input.
-	// We need to identify the image input node.
-	// Strategy: Search for "LoadImage" node.
-	var imageNodeID string
+	// Video workflows may have multiple LoadImage nodes (e.g. first/last frame),
+	// inject the scene image into all of them.
+	var imageNodeIDs []string
 	for id, node := range wfJSON {
 		if nodeMap, ok := node.(map[string]interface{}); ok {
 			if classType, ok := nodeMap["class_type"].(string); ok {
 				if classType == "LoadImage" {
-					imageNodeID = id
-					break
+					imageNodeIDs = append(imageNodeIDs, id)
 				}
 			}
 		}
@@ -1441,12 +1439,12 @@ func triggerVideoGeneration(video models.Video) (string, error) {
 	uploadedName, err := UploadToComfyUIInput(absPath)
 	if err != nil {
 		Log(LogLevelError, "ComfyUI Upload Failed", fmt.Sprintf("Failed to upload scene image %s: %v", absPath, err))
-		if imageNodeID != "" {
-			setInput(imageNodeID, "image", absPath)
+		for _, id := range imageNodeIDs {
+			setInput(id, "image", absPath)
 		}
 	} else {
-		if imageNodeID != "" {
-			setInput(imageNodeID, "image", uploadedName)
+		for _, id := range imageNodeIDs {
+			setInput(id, "image", uploadedName)
 		}
 	}
 
