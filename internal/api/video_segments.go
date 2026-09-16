@@ -1097,12 +1097,11 @@ func triggerVideoGenerationWithInput(video models.Video, inputImagePath string, 
 		}
 	}
 
-	var imageNodeID string
+	var imageNodeIDs []string
 	for id, node := range wfJSON {
 		if nodeMap, ok := node.(map[string]interface{}); ok {
 			if classType, ok := nodeMap["class_type"].(string); ok && classType == "LoadImage" {
-				imageNodeID = id
-				break
+				imageNodeIDs = append(imageNodeIDs, id)
 			}
 		}
 	}
@@ -1113,11 +1112,13 @@ func triggerVideoGenerationWithInput(video models.Video, inputImagePath string, 
 	}
 	uploadedName, err := UploadToComfyUIInput(absImagePath)
 	if err != nil {
-		if imageNodeID != "" {
-			setInput(imageNodeID, "image", absImagePath)
+		for _, id := range imageNodeIDs {
+			setInput(id, "image", absImagePath)
 		}
-	} else if imageNodeID != "" {
-		setInput(imageNodeID, "image", uploadedName)
+	} else {
+		for _, id := range imageNodeIDs {
+			setInput(id, "image", uploadedName)
+		}
 	}
 
 	logComfyWorkflowPayload("Video ComfyUI Workflow Payload", workflowLabel, wfJSON)
