@@ -177,5 +177,5 @@ func extractMiddleFrameFromVideo(videoAbsPath string, pngAbsPath string) error {
 		middleFrame = 0
 	}
 	filter := fmt.Sprintf("select=eq(n\\,%d)", middleFrame)
-	return runFFmpeg("-i", videoAbsPath, "-vf", filter, "-vsync", "vfr", "-frames:v", "1", pngAbsPath, "-y")
+	return runFFmpeg("-i", videoAbsPath, "-vf", filter, "-frames:v", "1", pngAbsPath, "-y")
 }
