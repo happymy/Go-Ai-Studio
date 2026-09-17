@@ -941,27 +941,38 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 	}
 	width, height := getConfiguredSceneImageSize()
 	seed := getConfiguredGlobalSeed()
-	var setting models.SystemSettings
-	if err := db.DB.Where("key = ?", KeyDefaultImageModel).First(&setting).Error; err != nil {
-		return "", fmt.Errorf("default image workflow is not configured")
-	}
-	workflowName := strings.TrimSpace(setting.Value)
-	if workflowName == "" {
-		return "", fmt.Errorf("default image workflow is not configured")
-	}
+	h3VideoFrameMode := useH3VideoFrameMode()
 
-	// Find workflow file
-	files, _ := filepath.Glob(filepath.Join("workflows", "*.json"))
 	var targetFile string
-	for _, file := range files {
-		meta, err := workflow.ParseWorkflow(file)
-		if err == nil && meta.WorkflowName == workflowName {
-			targetFile = file
-			break
+	if h3VideoFrameMode {
+		h3File, err := findH3T2VWorkflowFile()
+		if err != nil {
+			return "", err
 		}
-	}
-	if targetFile == "" {
-		return "", fmt.Errorf("workflow file for '%s' not found", workflowName)
+		width, height = normalizeH3VideoFrameSize(width, height)
+		targetFile = h3File
+	} else {
+		var setting models.SystemSettings
+		if err := db.DB.Where("key = ?", KeyDefaultImageModel).First(&setting).Error; err != nil {
+			return "", fmt.Errorf("default image workflow is not configured")
+		}
+		workflowName := strings.TrimSpace(setting.Value)
+		if workflowName == "" {
+			return "", fmt.Errorf("default image workflow is not configured")
+		}
+
+		// Find workflow file
+		files, _ := filepath.Glob(filepath.Join("workflows", "*.json"))
+		for _, file := range files {
+			meta, err := workflow.ParseWorkflow(file)
+			if err == nil && meta.WorkflowName == workflowName {
+				targetFile = file
+				break
+			}
+		}
+		if targetFile == "" {
+			return "", fmt.Errorf("workflow file for '%s' not found", workflowName)
+		}
 	}
 	workflowLabel := workflowDisplayNameFromPath(targetFile)
 
@@ -1018,6 +1029,9 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 	setInput(meta.SeedNodeID, meta.SeedInputKey, seed)
 	setInput(meta.WidthNodeID, meta.WidthInputKey, width)
 	setInput(meta.HeightNodeID, meta.HeightInputKey, height)
+	if h3VideoFrameMode {
+		injectH3Duration(wfJSON, h3VideoFrameDurationSeconds)
+	}
 	logComfyWorkflowPayload("Scene ComfyUI Payload", workflowLabel, wfJSON)
 
 	// Queue
@@ -1058,19 +1072,8 @@ func waitForSceneImageOutput(promptID string, sceneID uint, projectCode string) 
 				if !ok {
 					continue
 				}
-				images, ok := imageOutputs["images"].([]interface{})
-				if !ok || len(images) == 0 {
-					continue
-				}
-				imgData, ok := images[0].(map[string]interface{})
+				fileData, isVideo, ok := resolveImageOrVideoOutput(imageOutputs)
 				if !ok {
-					continue
-				}
-
-				filename, _ := imgData["filename"].(string)
-				subfolder, _ := imgData["subfolder"].(string)
-				typeStr, _ := imgData["type"].(string)
-				if filename == "" {
 					continue
 				}
 
@@ -1079,6 +1082,17 @@ func waitForSceneImageOutput(promptID string, sceneID uint, projectCode string) 
 					return "", err
 				}
 				saveFilename := fmt.Sprintf("scene_%d_%d.png", sceneID, time.Now().Unix())
+				if isVideo {
+					webPath, err := downloadHistoryVideoAndExtractFrame(fileData, saveDir, saveFilename)
+					if err != nil {
+						return "", err
+					}
+					return webPath, nil
+				}
+
+				filename, _ := fileData["filename"].(string)
+				subfolder, _ := fileData["subfolder"].(string)
+				typeStr, _ := fileData["type"].(string)
 				savePath := filepath.Join(saveDir, saveFilename)
 				if err := DownloadComfyImage(filename, subfolder, typeStr, savePath); err != nil {
 					return "", err

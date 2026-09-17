@@ -43,6 +43,7 @@ export default function Settings() {
         jimeng_aspect_ratio: "16:9",
         default_image_model: "",
         default_video_model: "",
+        image_generation_mode: "krea_t2i",
         global_seed: "264590",
         store_visit_image_reference_order: "blogger_first",
         general_guide_transition_engine: "ltx2_3",
@@ -308,6 +309,20 @@ export default function Settings() {
             <div className="bg-card p-6 rounded-lg border border-border shadow-sm">
                 <h2 className="text-xl font-semibold mb-4 text-primary">全局默认值</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-2">图片生成方式</label>
+                        <select
+                            value={settings.image_generation_mode}
+                            onChange={e => updateSetting("image_generation_mode", e.target.value)}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                            <option value="krea_t2i">Krea2 文生图（默认）</option>
+                            <option value="h3_video_frame">MiniMax H3 短视频抽帧（约 0.1s，取中间帧）</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            用于场景图与角色预览图。抽帧模式使用内置 minimax_h3_t2v 工作流生成极短视频再取中间帧作为图片；尺寸会等比缩放到 H3 上限内并对齐 16。
+                        </p>
+                    </div>
                      <div className="space-y-4">
                         <h3 className="text-lg font-medium text-muted-foreground">场景图片生成</h3>
                         <div className="grid grid-cols-2 gap-4">

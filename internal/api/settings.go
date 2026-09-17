@@ -34,6 +34,7 @@ const (
 	KeyLLMTimeoutMinutes         = "llm_timeout_minutes"
 	KeyDefaultImageModel         = "default_image_model"
 	KeyDefaultVideoModel         = "default_video_model"
+	KeyImageGenMode              = "image_generation_mode"
 	KeyGlobalSeed                = "global_seed"
 	KeyStoreVisitImageReferenceOrder = "store_visit_image_reference_order"
 	KeyGeneralGuideTransitionEngine = "general_guide_transition_engine"
@@ -45,6 +46,8 @@ const (
 const (
 	VideoGenerationProviderLocal  = "local"
 	VideoGenerationProviderJimeng = "jimeng"
+	ImageGenModeKreaT2I           = "krea_t2i"
+	ImageGenModeH3VideoFrame      = "h3_video_frame"
 	StoreVisitImageOrderBloggerFirst = "blogger_first"
 	StoreVisitImageOrderSceneFirst   = "scene_first"
 	GeneralGuideTransitionEngineLTX23 = "ltx2_3"
@@ -87,6 +90,7 @@ func InitDefaultSettings() {
 		KeyLLMTimeoutMinutes:    "30",
 		KeyDefaultImageModel:    "",
 		KeyDefaultVideoModel:    "",
+		KeyImageGenMode:         ImageGenModeKreaT2I,
 		KeyGlobalSeed:           "-1",
 		KeyStoreVisitImageReferenceOrder: StoreVisitImageOrderBloggerFirst,
 		KeyGeneralGuideTransitionEngine:  GeneralGuideTransitionEngineLTX23,
@@ -165,6 +169,8 @@ func getDescription(key string) string {
 		return "默认图片生成模型工作流"
 	case KeyDefaultVideoModel:
 		return "默认视频生成模型工作流"
+	case KeyImageGenMode:
+		return "图片生成方式（krea_t2i：文生图；h3_video_frame：MiniMax H3 短视频抽帧）"
 	case KeyGlobalSeed:
 		return "全局默认种子 (Seed)"
 	case KeyStoreVisitImageReferenceOrder:
@@ -461,6 +467,23 @@ func getConfiguredGeneralGuideTransitionEngine() string {
 	return normalizeGeneralGuideTransitionEngine(defaultSettingValue(KeyGeneralGuideTransitionEngine))
 }
 
+func normalizeImageGenMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case ImageGenModeH3VideoFrame:
+		return ImageGenModeH3VideoFrame
+	default:
+		return ImageGenModeKreaT2I
+	}
+}
+
+func getConfiguredImageGenMode() string {
+	var setting models.SystemSettings
+	if err := db.DB.Where("key = ?", KeyImageGenMode).First(&setting).Error; err == nil {
+		return normalizeImageGenMode(setting.Value)
+	}
+	return normalizeImageGenMode(defaultSettingValue(KeyImageGenMode))
+}
+
 func defaultSettingValue(key string) string {
 	switch key {
 	case KeyImageHeight:
@@ -495,6 +518,8 @@ func defaultSettingValue(key string) string {
 		return ""
 	case KeyDefaultVideoModel:
 		return ""
+	case KeyImageGenMode:
+		return ImageGenModeKreaT2I
 	case KeyGlobalSeed:
 		return "-1"
 	case KeyStoreVisitImageReferenceOrder:
@@ -562,6 +587,8 @@ func GetSettings(c *gin.Context) {
 			settingsMap[s.Key] = normalizeJimengAspectRatio(s.Value)
 		} else if s.Key == KeyGeneralGuideTransitionEngine {
 			settingsMap[s.Key] = normalizeGeneralGuideTransitionEngine(s.Value)
+		} else if s.Key == KeyImageGenMode {
+			settingsMap[s.Key] = normalizeImageGenMode(s.Value)
 		} else {
 			settingsMap[s.Key] = s.Value
 		}
