@@ -18,6 +18,40 @@ const (
 	h3VideoFrameSizeMultiple    = 16
 )
 
+// h3VideoFramePromptPreset 是 H3 抽帧附加提示词的内置预设，供设置页下拉框直接选用。
+type h3VideoFramePromptPreset struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Text  string `json:"text"`
+}
+
+// h3VideoFramePromptPresets 是预设文本的唯一真源（设置页下拉与默认值都取自这里），首项即默认值。
+// 注意：H3 t2v 工作流没有 negative 输入，所有禁止项只能写进正向提示词并置于末尾。
+var h3VideoFramePromptPresets = []h3VideoFramePromptPreset{
+	{
+		ID:    "compact",
+		Label: "精简版（推荐）",
+		Text:  "固定机位、固定焦段、固定构图的静态锁定镜头，全片是同一时刻的一张高分辨率照片，完全冻结，不是慢动作也不是升格。全片所有帧完全一致，人物五官、发型、服装、姿势与位置无漂移变形，曝光、色温、色调、锐度保持不变。上文如有动作、运动或镜头调度描述，一律理解为该动作的定格瞬间，不产生实际运动。禁止：相机运动与镜头切换、眨眼、呼吸、口型与表情变化、头发与衣物摆动、风吹叶动、水面波动、烟雾尘埃、人群走动、运动模糊与拖影、噪点闪烁与纹理游移、明暗色彩跳变、字幕文字水印、声音。",
+	},
+	{
+		ID:    "full",
+		Label: "完整版（约束最多，最稳定）",
+		Text:  "静态锁定镜头、固定机位与焦段、固定构图，全片为同一时刻的一张高分辨率照片，完全冻结，非慢动作、非升格、非定格动画。全片所有帧完全相同：人物五官、发型、发色、服装、配饰、姿势与位置完全一致，无漂移、无变形、无人数增减；曝光、白平衡、色温、对比度、饱和度、锐度、颗粒全片不变；无景深变化、无自动对焦呼吸、无焦段变化、无视差。上文任何动作、运动、镜头调度或情绪变化描述，一律理解为该动作的定格瞬间，不产生实际运动。严格禁止：推、拉、摇、移、跟、升、降、环绕、手持抖动、镜头切换、淡入淡出、黑帧白闪；眨眼、呼吸起伏、口型变化、表情渐变、肢体移动、头发与衣物摆动；风、云移、树叶与窗帘与旗帜飘动、水面波动、烟雾、尘埃、雨雪、火花、影子与光斑移动、人群走动、车辆驶过、物体进出画面；运动模糊、拖影、重影、残影、双重曝光；噪点闪烁、纹理游移、摩尔纹、压缩伪影跳动、亮度与色彩跳变；字幕、文字、水印；声音。",
+	},
+	{
+		ID:    "minimal",
+		Label: "极简版（怕稀释场景描述时用）",
+		Text:  "静态锁定镜头，固定机位与焦段，全片是同一时刻的高分辨率照片，完全冻结（非慢动作、非升格）；全片所有帧一致，人物与场景无漂移变形；上文动作描述一律理解为定格瞬间。无相机运动与镜头切换，无运动模糊与拖影，无闪烁与明暗跳变，无声音。",
+	},
+}
+
+func h3VideoFrameDefaultPrompt() string {
+	if len(h3VideoFramePromptPresets) == 0 {
+		return ""
+	}
+	return h3VideoFramePromptPresets[0].Text
+}
+
 // useH3VideoFrameMode 判断当前图片生成是否走 MiniMax H3 短视频抽帧。
 func useH3VideoFrameMode() bool {
 	return getConfiguredImageGenMode() == ImageGenModeH3VideoFrame
@@ -175,6 +209,31 @@ func extractFrameFromVideo(videoAbsPath string, pngAbsPath string, pick string) 
 	targetFrame := h3TargetFrameIndex(totalFrames, pick)
 	filter := fmt.Sprintf("select=eq(n\\,%d)", targetFrame)
 	return runFFmpeg("-i", videoAbsPath, "-vf", filter, "-frames:v", "1", pngAbsPath, "-y")
+}
+
+// appendH3VideoFrameStaticPrompt 仅在 H3 抽帧模式下，把用户配置的附加提示词追加到提示词末尾。
+// 未启用抽帧模式或配置为空时原样返回。
+func appendH3VideoFrameStaticPrompt(prompt string) string {
+	if !useH3VideoFrameMode() {
+		return prompt
+	}
+	return mergeH3StaticPrompt(prompt, getConfiguredH3VideoFramePrompt())
+}
+
+// mergeH3StaticPrompt 把附加提示词拼到提示词末尾；附加词为空或已包含时原样返回。
+func mergeH3StaticPrompt(prompt string, extra string) string {
+	trimmedExtra := strings.TrimSpace(extra)
+	if trimmedExtra == "" {
+		return prompt
+	}
+	base := strings.TrimSpace(prompt)
+	if strings.Contains(base, trimmedExtra) {
+		return prompt
+	}
+	if base == "" {
+		return trimmedExtra
+	}
+	return base + "\n" + trimmedExtra
 }
 
 // h3TargetFrameIndex 把抽帧位置映射为帧序号（越界时夹到合法范围）。

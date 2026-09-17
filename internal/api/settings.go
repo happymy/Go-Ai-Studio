@@ -36,6 +36,7 @@ const (
 	KeyDefaultVideoModel         = "default_video_model"
 	KeyImageGenMode              = "image_generation_mode"
 	KeyH3VideoFramePick          = "h3_video_frame_pick"
+	KeyH3VideoFramePrompt        = "h3_video_frame_prompt"
 	KeyGlobalSeed                = "global_seed"
 	KeyStoreVisitImageReferenceOrder = "store_visit_image_reference_order"
 	KeyGeneralGuideTransitionEngine = "general_guide_transition_engine"
@@ -96,6 +97,7 @@ func InitDefaultSettings() {
 		KeyDefaultVideoModel:    "",
 		KeyImageGenMode:         ImageGenModeKreaT2I,
 		KeyH3VideoFramePick:     H3FramePickMiddle,
+		KeyH3VideoFramePrompt:   h3VideoFrameDefaultPrompt(),
 		KeyGlobalSeed:           "-1",
 		KeyStoreVisitImageReferenceOrder: StoreVisitImageOrderBloggerFirst,
 		KeyGeneralGuideTransitionEngine:  GeneralGuideTransitionEngineLTX23,
@@ -178,6 +180,8 @@ func getDescription(key string) string {
 		return "图片生成方式（krea_t2i：文生图；h3_video_frame：MiniMax H3 短视频抽帧）"
 	case KeyH3VideoFramePick:
 		return "H3 抽帧位置（first：首帧；middle：中间帧；last：尾帧）"
+	case KeyH3VideoFramePrompt:
+		return "H3 抽帧模式附加提示词（追加到场景图/角色图提示词末尾，留空则不追加）"
 	case KeyGlobalSeed:
 		return "全局默认种子 (Seed)"
 	case KeyStoreVisitImageReferenceOrder:
@@ -510,6 +514,14 @@ func getConfiguredH3FramePick() string {
 	return normalizeH3FramePick(defaultSettingValue(KeyH3VideoFramePick))
 }
 
+func getConfiguredH3VideoFramePrompt() string {
+	var setting models.SystemSettings
+	if err := db.DB.Where("key = ?", KeyH3VideoFramePrompt).First(&setting).Error; err == nil {
+		return setting.Value
+	}
+	return defaultSettingValue(KeyH3VideoFramePrompt)
+}
+
 func defaultSettingValue(key string) string {
 	switch key {
 	case KeyImageHeight:
@@ -548,6 +560,8 @@ func defaultSettingValue(key string) string {
 		return ImageGenModeKreaT2I
 	case KeyH3VideoFramePick:
 		return H3FramePickMiddle
+	case KeyH3VideoFramePrompt:
+		return h3VideoFrameDefaultPrompt()
 	case KeyGlobalSeed:
 		return "-1"
 	case KeyStoreVisitImageReferenceOrder:
@@ -628,6 +642,11 @@ func GetSettings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, settingsMap)
+}
+
+// GetH3PromptPresets 返回 H3 抽帧附加提示词的内置预设（只读，不落库）。
+func GetH3PromptPresets(c *gin.Context) {
+	c.JSON(http.StatusOK, h3VideoFramePromptPresets)
 }
 
 // UpdateSettings updates system settings

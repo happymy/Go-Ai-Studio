@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"kt-ai-studio/internal/workflow"
@@ -116,6 +117,55 @@ func TestInjectH3T2VParams(t *testing.T) {
 	}
 	if !foundDuration {
 		t.Error("no PrimitiveFloat node found in H3 t2v workflow")
+	}
+}
+
+func TestMergeH3StaticPrompt(t *testing.T) {
+	cases := []struct {
+		name   string
+		prompt string
+		extra  string
+		want   string
+	}{
+		{"空附加词原样返回", "场景描述", "", "场景描述"},
+		{"纯空白附加词原样返回", "场景描述", "  \n ", "场景描述"},
+		{"正常追加到末尾", "场景描述", "完全静止", "场景描述\n完全静止"},
+		{"已包含时去重", "场景描述\n完全静止", "完全静止", "场景描述\n完全静止"},
+		{"空提示词只留附加词", "   ", "完全静止", "完全静止"},
+		{"附加词首尾空格被清理", "场景描述", "  完全静止  ", "场景描述\n完全静止"},
+	}
+	for _, c := range cases {
+		if got := mergeH3StaticPrompt(c.prompt, c.extra); got != c.want {
+			t.Errorf("%s: mergeH3StaticPrompt(%q, %q) = %q, want %q", c.name, c.prompt, c.extra, got, c.want)
+		}
+	}
+}
+
+func TestH3VideoFramePromptPresets(t *testing.T) {
+	if len(h3VideoFramePromptPresets) < 3 {
+		t.Fatalf("expected at least 3 presets, got %d", len(h3VideoFramePromptPresets))
+	}
+	seen := map[string]bool{}
+	for _, p := range h3VideoFramePromptPresets {
+		if p.ID == "" || p.Label == "" || p.Text == "" {
+			t.Errorf("preset has empty field: %+v", p)
+		}
+		if seen[p.ID] {
+			t.Errorf("duplicate preset id %q", p.ID)
+		}
+		seen[p.ID] = true
+		if strings.TrimSpace(p.Text) != p.Text {
+			t.Errorf("preset %q text has leading/trailing whitespace", p.ID)
+		}
+		if !strings.Contains(p.Text, "慢动作") {
+			t.Errorf("preset %q must disambiguate slow motion", p.ID)
+		}
+		if n := len([]rune(p.Text)); n < 60 || n > 400 {
+			t.Errorf("preset %q rune length = %d, want 60-400", p.ID, n)
+		}
+	}
+	if got := h3VideoFrameDefaultPrompt(); got != h3VideoFramePromptPresets[0].Text {
+		t.Error("default prompt must equal the first preset text")
 	}
 }
 

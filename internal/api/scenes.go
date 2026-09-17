@@ -1019,6 +1019,7 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 		return "", err
 	}
 	finalImagePrompt := appendProjectStylePrompt(runtimeImagePrompt, project)
+	finalImagePrompt = appendH3VideoFrameStaticPrompt(finalImagePrompt)
 
 	setInput(meta.PositiveNodeID, meta.PositiveInputKey, finalImagePrompt)
 	if meta.NegativeNodeID != "" {

@@ -447,6 +447,7 @@ func triggerCharacterImageGeneration(char models.Character) (string, error) {
 	}
 
 	finalPositivePrompt := appendCharacterStylePrompt(basePositivePrompt, project)
+	finalPositivePrompt = appendH3VideoFrameStaticPrompt(finalPositivePrompt)
 	setInput(meta.PositiveNodeID, meta.PositiveInputKey, finalPositivePrompt)
 
 	if meta.NegativeNodeID != "" {

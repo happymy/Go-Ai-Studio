@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import type { Workflow } from "@/types";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/ui/combobox";
 import { Save, CheckCircle2, XCircle, ExternalLink, FolderSearch } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +15,16 @@ interface ModelCheckResult {
     exists: boolean;
     download_urls: string[];
 }
+
+interface H3PromptPreset {
+    id: string;
+    label: string;
+    text: string;
+}
+
+const CUSTOM_H3_PROMPT_ID = "custom";
+
+const normalizePromptText = (text: string) => (text ?? "").replace(/\r\n/g, "\n").trim();
 
 export default function Settings() {
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -45,6 +56,7 @@ export default function Settings() {
         default_video_model: "",
         image_generation_mode: "krea_t2i",
         h3_video_frame_pick: "middle",
+        h3_video_frame_prompt: "",
         global_seed: "264590",
         store_visit_image_reference_order: "blogger_first",
         general_guide_transition_engine: "ltx2_3",
@@ -57,6 +69,13 @@ export default function Settings() {
     const [checkResults, setCheckResults] = useState<ModelCheckResult[]>([]);
     const [isCheckModalOpen, setIsCheckModalOpen] = useState(false);
     const [checkingWorkflow, setCheckingWorkflow] = useState("");
+    const [h3PromptPresets, setH3PromptPresets] = useState<H3PromptPreset[]>([]);
+
+    useEffect(() => {
+        axios.get("/api/settings/h3_prompt_presets")
+            .then(res => setH3PromptPresets(Array.isArray(res.data) ? res.data : []))
+            .catch(err => console.error(err));
+    }, []);
 
     useEffect(() => {
         // Fetch Workflows
@@ -110,6 +129,28 @@ export default function Settings() {
 
     const updateSetting = (key: string, value: any) => {
         setSettings(prev => ({ ...prev, [key]: value }));
+    };
+
+    // H3 抽帧附加提示词：输入框文本是唯一真源，下拉框的选中项由文本内容派生
+    const h3PromptText = settings.h3_video_frame_prompt;
+    const h3PromptPresetId = h3PromptPresets.find(
+        p => normalizePromptText(p.text) === normalizePromptText(h3PromptText)
+    )?.id ?? CUSTOM_H3_PROMPT_ID;
+    const h3PromptLength = normalizePromptText(h3PromptText).length;
+
+    const applyH3PromptPreset = (presetId: string) => {
+        if (presetId === CUSTOM_H3_PROMPT_ID) {
+            return;
+        }
+        const preset = h3PromptPresets.find(p => p.id === presetId);
+        if (!preset) {
+            return;
+        }
+        const isEditedContent = normalizePromptText(h3PromptText) !== "" && h3PromptPresetId === CUSTOM_H3_PROMPT_ID;
+        if (isEditedContent && !window.confirm("将覆盖当前自定义提示词内容，是否继续？")) {
+            return;
+        }
+        updateSetting("h3_video_frame_prompt", preset.text);
     };
 
     const checkModels = (workflowName: string) => {
@@ -337,6 +378,30 @@ export default function Settings() {
                         </select>
                         <p className="text-xs text-muted-foreground mt-1">
                             仅在「图片生成方式」选择 H3 短视频抽帧时生效。H3 极短视频约 5 帧，尾帧运动幅度最大但也最易变形。
+                        </p>
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-2">H3 抽帧附加提示词</label>
+                        <select
+                            value={h3PromptPresetId}
+                            onChange={e => applyH3PromptPreset(e.target.value)}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm mb-2"
+                        >
+                            {h3PromptPresets.map(preset => (
+                                <option key={preset.id} value={preset.id}>{preset.label}</option>
+                            ))}
+                            <option value={CUSTOM_H3_PROMPT_ID}>自定义（可直接编辑下方内容）</option>
+                        </select>
+                        <Textarea
+                            value={h3PromptText}
+                            onChange={e => updateSetting("h3_video_frame_prompt", e.target.value)}
+                            placeholder="留空则不追加。可从上方预设快速填入后自行修改。"
+                            rows={5}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                            仅在「图片生成方式」选择 H3 短视频抽帧时生效，追加到场景图与角色图的提示词末尾；留空表示不追加。
+                            修改下方内容后下拉框会自动变为「自定义」，已保存的内容不会随预设文案更新。
+                            <span className={h3PromptLength > 300 ? "text-amber-600" : ""}>当前 {h3PromptLength} 字（建议 150–250 字，超过 300 字会稀释场景描述）。</span>
                         </p>
                     </div>
                      <div className="space-y-4">
