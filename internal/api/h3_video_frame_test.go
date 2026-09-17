@@ -118,3 +118,27 @@ func TestInjectH3T2VParams(t *testing.T) {
 		t.Error("no PrimitiveFloat node found in H3 t2v workflow")
 	}
 }
+
+func TestH3TargetFrameIndex(t *testing.T) {
+	cases := []struct {
+		total int
+		pick  string
+		want  int
+	}{
+		{5, H3FramePickFirst, 0},
+		{5, H3FramePickMiddle, 2},
+		{5, H3FramePickLast, 4},
+		{5, "", 2},
+		{5, "weird", 2},
+		{1, H3FramePickMiddle, 0},
+		{1, H3FramePickLast, 0},
+		{0, H3FramePickMiddle, 0},
+		{0, H3FramePickLast, 0},
+		{5, "LAST", 4},
+	}
+	for _, c := range cases {
+		if got := h3TargetFrameIndex(c.total, c.pick); got != c.want {
+			t.Errorf("h3TargetFrameIndex(%d, %q) = %d, want %d", c.total, c.pick, got, c.want)
+		}
+	}
+}

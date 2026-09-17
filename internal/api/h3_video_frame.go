@@ -160,22 +160,39 @@ func downloadHistoryVideoAndExtractFrame(fileData map[string]interface{}, saveDi
 	defer os.Remove(tempVideoPath)
 
 	savePath := filepath.Join(saveDir, saveFilename)
-	if err := extractMiddleFrameFromVideo(tempVideoPath, savePath); err != nil {
+	if err := extractFrameFromVideo(tempVideoPath, savePath, getConfiguredH3FramePick()); err != nil {
 		return "", err
 	}
 	return "/" + filepath.ToSlash(savePath), nil
 }
 
-// extractMiddleFrameFromVideo 用 ffprobe 取总帧数后，用 ffmpeg 抽取正中一帧。
-func extractMiddleFrameFromVideo(videoAbsPath string, pngAbsPath string) error {
+// extractFrameFromVideo 用 ffprobe 取总帧数后，按 pick（first/middle/last）抽取一帧。
+func extractFrameFromVideo(videoAbsPath string, pngAbsPath string, pick string) error {
 	totalFrames, _, err := ffprobeVideoFramesAndFPS(videoAbsPath)
 	if err != nil {
 		return err
 	}
-	middleFrame := totalFrames / 2
-	if middleFrame < 0 {
-		middleFrame = 0
-	}
-	filter := fmt.Sprintf("select=eq(n\\,%d)", middleFrame)
+	targetFrame := h3TargetFrameIndex(totalFrames, pick)
+	filter := fmt.Sprintf("select=eq(n\\,%d)", targetFrame)
 	return runFFmpeg("-i", videoAbsPath, "-vf", filter, "-frames:v", "1", pngAbsPath, "-y")
+}
+
+// h3TargetFrameIndex 把抽帧位置映射为帧序号（越界时夹到合法范围）。
+func h3TargetFrameIndex(totalFrames int, pick string) int {
+	targetFrame := 0
+	switch normalizeH3FramePick(pick) {
+	case H3FramePickFirst:
+		targetFrame = 0
+	case H3FramePickLast:
+		targetFrame = totalFrames - 1
+	default:
+		targetFrame = totalFrames / 2
+	}
+	if targetFrame < 0 {
+		return 0
+	}
+	if totalFrames > 0 && targetFrame > totalFrames-1 {
+		return totalFrames - 1
+	}
+	return targetFrame
 }

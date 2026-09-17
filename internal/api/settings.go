@@ -35,6 +35,7 @@ const (
 	KeyDefaultImageModel         = "default_image_model"
 	KeyDefaultVideoModel         = "default_video_model"
 	KeyImageGenMode              = "image_generation_mode"
+	KeyH3VideoFramePick          = "h3_video_frame_pick"
 	KeyGlobalSeed                = "global_seed"
 	KeyStoreVisitImageReferenceOrder = "store_visit_image_reference_order"
 	KeyGeneralGuideTransitionEngine = "general_guide_transition_engine"
@@ -48,6 +49,9 @@ const (
 	VideoGenerationProviderJimeng = "jimeng"
 	ImageGenModeKreaT2I           = "krea_t2i"
 	ImageGenModeH3VideoFrame      = "h3_video_frame"
+	H3FramePickFirst              = "first"
+	H3FramePickMiddle             = "middle"
+	H3FramePickLast               = "last"
 	StoreVisitImageOrderBloggerFirst = "blogger_first"
 	StoreVisitImageOrderSceneFirst   = "scene_first"
 	GeneralGuideTransitionEngineLTX23 = "ltx2_3"
@@ -91,6 +95,7 @@ func InitDefaultSettings() {
 		KeyDefaultImageModel:    "",
 		KeyDefaultVideoModel:    "",
 		KeyImageGenMode:         ImageGenModeKreaT2I,
+		KeyH3VideoFramePick:     H3FramePickMiddle,
 		KeyGlobalSeed:           "-1",
 		KeyStoreVisitImageReferenceOrder: StoreVisitImageOrderBloggerFirst,
 		KeyGeneralGuideTransitionEngine:  GeneralGuideTransitionEngineLTX23,
@@ -171,6 +176,8 @@ func getDescription(key string) string {
 		return "默认视频生成模型工作流"
 	case KeyImageGenMode:
 		return "图片生成方式（krea_t2i：文生图；h3_video_frame：MiniMax H3 短视频抽帧）"
+	case KeyH3VideoFramePick:
+		return "H3 抽帧位置（first：首帧；middle：中间帧；last：尾帧）"
 	case KeyGlobalSeed:
 		return "全局默认种子 (Seed)"
 	case KeyStoreVisitImageReferenceOrder:
@@ -484,6 +491,25 @@ func getConfiguredImageGenMode() string {
 	return normalizeImageGenMode(defaultSettingValue(KeyImageGenMode))
 }
 
+func normalizeH3FramePick(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case H3FramePickFirst:
+		return H3FramePickFirst
+	case H3FramePickLast:
+		return H3FramePickLast
+	default:
+		return H3FramePickMiddle
+	}
+}
+
+func getConfiguredH3FramePick() string {
+	var setting models.SystemSettings
+	if err := db.DB.Where("key = ?", KeyH3VideoFramePick).First(&setting).Error; err == nil {
+		return normalizeH3FramePick(setting.Value)
+	}
+	return normalizeH3FramePick(defaultSettingValue(KeyH3VideoFramePick))
+}
+
 func defaultSettingValue(key string) string {
 	switch key {
 	case KeyImageHeight:
@@ -520,6 +546,8 @@ func defaultSettingValue(key string) string {
 		return ""
 	case KeyImageGenMode:
 		return ImageGenModeKreaT2I
+	case KeyH3VideoFramePick:
+		return H3FramePickMiddle
 	case KeyGlobalSeed:
 		return "-1"
 	case KeyStoreVisitImageReferenceOrder:
@@ -589,6 +617,8 @@ func GetSettings(c *gin.Context) {
 			settingsMap[s.Key] = normalizeGeneralGuideTransitionEngine(s.Value)
 		} else if s.Key == KeyImageGenMode {
 			settingsMap[s.Key] = normalizeImageGenMode(s.Value)
+		} else if s.Key == KeyH3VideoFramePick {
+			settingsMap[s.Key] = normalizeH3FramePick(s.Value)
 		} else {
 			settingsMap[s.Key] = s.Value
 		}

@@ -44,6 +44,7 @@ export default function Settings() {
         default_image_model: "",
         default_video_model: "",
         image_generation_mode: "krea_t2i",
+        h3_video_frame_pick: "middle",
         global_seed: "264590",
         store_visit_image_reference_order: "blogger_first",
         general_guide_transition_engine: "ltx2_3",
@@ -321,6 +322,21 @@ export default function Settings() {
                         </select>
                         <p className="text-xs text-muted-foreground mt-1">
                             用于场景图与角色预览图。抽帧模式使用内置 minimax_h3_t2v 工作流生成极短视频再取中间帧作为图片；尺寸会等比缩放到 H3 上限内并对齐 16。
+                        </p>
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-2">H3 抽帧位置</label>
+                        <select
+                            value={settings.h3_video_frame_pick}
+                            onChange={e => updateSetting("h3_video_frame_pick", e.target.value)}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                            <option value="first">首帧（最贴近提示词起始状态）</option>
+                            <option value="middle">中间帧（默认，画面通常最稳定）</option>
+                            <option value="last">尾帧（运动最充分）</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            仅在「图片生成方式」选择 H3 短视频抽帧时生效。H3 极短视频约 5 帧，尾帧运动幅度最大但也最易变形。
                         </p>
                     </div>
                      <div className="space-y-4">
