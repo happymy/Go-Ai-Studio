@@ -1142,7 +1142,10 @@ func resolveSelectedVideoWorkflowFamily() (string, error) {
 		if strings.Contains(name, "ltx") || strings.Contains(fileName, "ltx") {
 			return "ltx", nil
 		}
-		return "", fmt.Errorf("only the LTX video workflow is supported in this version")
+		if strings.Contains(name, "h3") || strings.Contains(fileName, "h3") {
+			return "r2v", nil
+		}
+		return "", fmt.Errorf("unsupported video workflow family: %s", workflowName)
 	}
 
 	return "", fmt.Errorf("workflow file for '%s' not found", workflowName)

@@ -252,8 +252,8 @@ func validateVideoFingerprintPhaseContent(payload *VideoFingerprintPayload) erro
 }
 
 func buildStoredVideoSegmentPlan(video models.Video, workflowFamily string, lang string) (*VideoSegmentPlanResponse, error) {
-	if family := strings.TrimSpace(strings.ToLower(workflowFamily)); family != "" && family != "ltx" {
-		return nil, fmt.Errorf("only the LTX video workflow is supported in this version")
+	if family := strings.TrimSpace(strings.ToLower(workflowFamily)); family != "" && family != "ltx" && family != "r2v" {
+		return nil, fmt.Errorf("unsupported video workflow family: %s", workflowFamily)
 	}
 	fullPrompt := strings.TrimSpace(video.VideoPrompt)
 	if fullPrompt == "" {
@@ -964,6 +964,36 @@ func mergeVideoSegments(projectCode string, videoID uint, segments []models.Vide
 	return "/" + filepath.ToSlash(outputPath), nil
 }
 
+func isH3R2VWorkflow(wfJSON map[string]interface{}) bool {
+	for _, node := range wfJSON {
+		nodeMap, ok := node.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		classType, _ := nodeMap["class_type"].(string)
+		if classType == "MiniMaxH3ImageToVideo" {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveH3R2VLastFrameImage 返回当前镜下一镜的首帧场景图（R2V last_frame 用）。
+// 找不到下一镜（末期/未生成）时返回空串，调用方回退为首帧图。
+func resolveH3R2VLastFrameImage(video models.Video) string {
+	if err := hydrateVideoScene(&video, false); err != nil {
+		return ""
+	}
+	var next models.Scene
+	err := db.DB.Where("project_id = ? AND episode = ? AND scene_number > ?",
+		video.ProjectID, video.Scene.Episode, video.Scene.SceneNumber).
+		Order("scene_number asc").First(&next).Error
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(next.GeneratedImage)
+}
+
 func triggerVideoGenerationWithInput(video models.Video, inputImagePath string, positive string, negative string, fps int, length int, seed int64, saveLabel string) (string, error) {
 	var project models.Project
 	if err := db.DB.First(&project, video.ProjectID).Error; err != nil {
@@ -1053,7 +1083,7 @@ func triggerVideoGenerationWithInput(video models.Video, inputImagePath string, 
 	if fps > 0 {
 		setInput(meta.FPSNodeID, meta.FPSInputKey, fps)
 	}
-	if length > 0 {
+	if length > 0 && !hasLinkedInput(meta.LengthNodeID, meta.LengthInputKey) {
 		setInput(meta.LengthNodeID, meta.LengthInputKey, length)
 	}
 	for _, node := range wfJSON {
@@ -1097,27 +1127,63 @@ func triggerVideoGenerationWithInput(video models.Video, inputImagePath string, 
 		}
 	}
 
-	var imageNodeIDs []string
-	for id, node := range wfJSON {
-		if nodeMap, ok := node.(map[string]interface{}); ok {
-			if classType, ok := nodeMap["class_type"].(string); ok && classType == "LoadImage" {
-				imageNodeIDs = append(imageNodeIDs, id)
-			}
+	r2v := isH3R2VWorkflow(wfJSON)
+
+	uploadInput := func(path string) (string, error) {
+		absImagePath, err := assetWebPathToAbs(path)
+		if err != nil {
+			return "", err
 		}
+		uploadedName, err := UploadToComfyUIInput(absImagePath)
+		if err != nil {
+			return absImagePath, nil
+		}
+		return uploadedName, nil
 	}
 
-	absImagePath, err := assetWebPathToAbs(inputImagePath)
-	if err != nil {
-		return "", err
-	}
-	uploadedName, err := UploadToComfyUIInput(absImagePath)
-	if err != nil {
-		for _, id := range imageNodeIDs {
-			setInput(id, "image", absImagePath)
+	if r2v {
+		firstFrame := inputImagePath
+		lastFrame := resolveH3R2VLastFrameImage(video)
+		if lastFrame == "" {
+			lastFrame = firstFrame
+		}
+		firstUploaded, err := uploadInput(firstFrame)
+		if err != nil {
+			return "", err
+		}
+		lastUploaded, err := uploadInput(lastFrame)
+		if err != nil {
+			return "", err
+		}
+		for id, node := range wfJSON {
+			nodeMap, ok := node.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			classType, _ := nodeMap["class_type"].(string)
+			if classType != "LoadImage" {
+				continue
+			}
+			metaInfo, _ := nodeMap["_meta"].(map[string]interface{})
+			title, _ := metaInfo["title"].(string)
+			switch title {
+			case "(input:image) First Frame":
+				setInput(id, "image", firstUploaded)
+			case "(input:image) Last Frame":
+				setInput(id, "image", lastUploaded)
+			}
 		}
 	} else {
-		for _, id := range imageNodeIDs {
-			setInput(id, "image", uploadedName)
+		uploadedName, err := uploadInput(inputImagePath)
+		if err != nil {
+			return "", err
+		}
+		for id, node := range wfJSON {
+			if nodeMap, ok := node.(map[string]interface{}); ok {
+				if classType, ok := nodeMap["class_type"].(string); ok && classType == "LoadImage" {
+					setInput(id, "image", uploadedName)
+				}
+			}
 		}
 	}
 
