@@ -737,6 +737,9 @@ func buildLightweightStoryPrompts(project models.Project, req models.AutoGenerat
 	case AutoGenerateModeHighQuality:
 		systemPrompt, userPrompt := buildHighQualityLightweightStoryPrompts(ctx)
 		return systemPrompt, userPrompt, nil
+	case AutoGenerateModeR2V:
+		systemPrompt, userPrompt := buildR2VLightweightStoryPrompts(ctx)
+		return systemPrompt, userPrompt, nil
 	default:
 		systemPrompt, userPrompt := buildStandardLightweightStoryPrompts(ctx)
 		return systemPrompt, userPrompt, nil

@@ -6,6 +6,7 @@ const (
 	AutoGenerateModeNarration   = "narration"
 	AutoGenerateModeHighQuality = "high_quality"
 	AutoGenerateModeStoryboard  = "storyboard"
+	AutoGenerateModeR2V         = "r2v"
 )
 
 func normalizeAutoGenerateGenerationMode(raw string, allowCharacterSpeech bool) string {
@@ -16,6 +17,8 @@ func normalizeAutoGenerateGenerationMode(raw string, allowCharacterSpeech bool) 
 		return AutoGenerateModeHighQuality
 	case AutoGenerateModeStoryboard:
 		return AutoGenerateModeStoryboard
+	case AutoGenerateModeR2V:
+		return AutoGenerateModeR2V
 	}
 	if allowCharacterSpeech {
 		return AutoGenerateModeHighQuality
@@ -25,7 +28,7 @@ func normalizeAutoGenerateGenerationMode(raw string, allowCharacterSpeech bool) 
 
 func autoGenerateModeAllowsCharacterSpeech(mode string) bool {
 	switch normalizeAutoGenerateGenerationMode(mode, false) {
-	case AutoGenerateModeHighQuality, AutoGenerateModeStoryboard:
+	case AutoGenerateModeHighQuality, AutoGenerateModeStoryboard, AutoGenerateModeR2V:
 		return true
 	default:
 		return false
@@ -39,7 +42,7 @@ func autoGenerateModeRequiresEmptyNarration(mode string) bool {
 
 func autoGenerateModeUsesFlowingVideoPrompt(mode string) bool {
 	switch normalizeAutoGenerateGenerationMode(mode, false) {
-	case AutoGenerateModeHighQuality, AutoGenerateModeStoryboard:
+	case AutoGenerateModeHighQuality, AutoGenerateModeStoryboard, AutoGenerateModeR2V:
 		return true
 	default:
 		return false
