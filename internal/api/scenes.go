@@ -947,7 +947,13 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 
 	var targetFile string
 	if h3VideoFrameMode {
-		h3File, err := findH3Ref2VWorkflowFile()
+		var h3File string
+		var err error
+		if scene.UseRefImage && scene.RefImage != "" {
+			h3File, err = findH3Ref2VWorkflowFile()
+		} else {
+			h3File, err = findH3T2VWorkflowFile()
+		}
 		if err != nil {
 			return "", err
 		}
@@ -1061,6 +1067,12 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 		if imageNodeID != "" {
 			setInput(imageNodeID, "image", uploadedName)
 		}
+	}
+
+	// ref2v 工作流模板自带官方示例素材（LoadAudio/LoadVideo/GetVideoComponents），
+	// 场景图仅使用参考图，提交前剥掉 audio/video 参考，避免在 ComfyUI 校验时缺文件报错。
+	if filepath.Base(targetFile) == h3Ref2VWorkflowFileName {
+		stripH3Ref2VExampleAssets(wfJSON)
 	}
 
 	logComfyWorkflowPayload("Scene ComfyUI Payload", workflowLabel, wfJSON)

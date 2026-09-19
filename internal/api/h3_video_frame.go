@@ -80,6 +80,40 @@ func findH3Ref2VWorkflowFile() (string, error) {
 	return "", fmt.Errorf("H3 ref2v workflow '%s' not found", h3Ref2VWorkflowFileName)
 }
 
+// stripH3Ref2VExampleAssets 移除 ref2v 官方模板中残留的示例参考素材节点
+// （LoadAudio / LoadVideo / GetVideoComponents）及其在 ReferenceToVideo 节点上的输入引用。
+// 场景图仅使用参考图，官方示例的音频/视频文件不存在于 ComfyUI input，不剥离会导致提交校验失败
+// （prompt_outputs_failed_validation: LoadAudio/LoadVideo 文件缺失）。
+func stripH3Ref2VExampleAssets(wfJSON map[string]interface{}) {
+	var orphanIDs []string
+	for id, node := range wfJSON {
+		nodeMap, ok := node.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		classType, _ := nodeMap["class_type"].(string)
+		inputs, _ := nodeMap["inputs"].(map[string]interface{})
+		switch classType {
+		case "LoadAudio", "LoadVideo", "GetVideoComponents":
+			orphanIDs = append(orphanIDs, id)
+		case "MiniMaxH3ReferenceToVideo":
+			if inputs == nil {
+				continue
+			}
+			// ref_videos.ref_video_0 / ref_video_audios.ref_video_audio_0 指向 GetVideoComponents(152/156)，
+			// ref_audios.ref_audio_0 指向 LoadAudio(153)。仅保留 ref_images.* 参考图通道。
+			for key := range inputs {
+				if strings.HasPrefix(key, "ref_videos") || strings.HasPrefix(key, "ref_video_audios") || strings.HasPrefix(key, "ref_audios") {
+					delete(inputs, key)
+				}
+			}
+		}
+	}
+	for _, id := range orphanIDs {
+		delete(wfJSON, id)
+	}
+}
+
 // normalizeH3VideoFrameSize 保持宽高比等比缩小至 H3 分辨率上限内，并对齐到 16 的倍数。
 func normalizeH3VideoFrameSize(width, height int) (int, int) {
 	if width <= 0 || height <= 0 {

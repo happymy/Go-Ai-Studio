@@ -169,6 +169,64 @@ func TestH3VideoFramePromptPresets(t *testing.T) {
 	}
 }
 
+func TestH3ReferenceWorkflowLoads(t *testing.T) {
+	workflowPath := filepath.Join("..", "..", "workflows", h3Ref2VWorkflowFileName)
+	if _, err := os.Stat(workflowPath); err != nil {
+		t.Skipf("H3 ref2v workflow not present: %v", err)
+	}
+	meta, err := workflow.ParseWorkflow(workflowPath)
+	if err != nil {
+		t.Fatalf("ParseWorkflow: %v", err)
+	}
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	var wfJSON map[string]interface{}
+	if err := json.Unmarshal(data, &wfJSON); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if meta.PositiveNodeID == "" || meta.SeedNodeID == "" || meta.WidthNodeID == "" || meta.HeightNodeID == "" {
+		t.Fatalf("parser missed node ids: %+v", meta)
+	}
+
+	stripH3Ref2VExampleAssets(wfJSON)
+
+	// 官方示例的音频/视频素材节点必须被剥离，否则提交校验会因 input 缺文件失败。
+	for _, classType := range []string{"LoadAudio", "LoadVideo", "GetVideoComponents"} {
+		for id, node := range wfJSON {
+			nodeMap, _ := node.(map[string]interface{})
+			if got, _ := nodeMap["class_type"].(string); got == classType {
+				t.Errorf("node %s remains class %s after strip", id, classType)
+			}
+		}
+	}
+
+	// ReferenceToVideo 节点只能保留 ref_images.* 输入。
+	hasRefImage := false
+	for _, node := range wfJSON {
+		nodeMap, ok := node.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if got, _ := nodeMap["class_type"].(string); got != "MiniMaxH3ReferenceToVideo" {
+			continue
+		}
+		inputs, _ := nodeMap["inputs"].(map[string]interface{})
+		for key := range inputs {
+			if strings.HasPrefix(key, "ref_videos") || strings.HasPrefix(key, "ref_video_audios") || strings.HasPrefix(key, "ref_audios") {
+				t.Errorf("ReferenceToVideo retains %q after strip", key)
+			}
+			if strings.HasPrefix(key, "ref_images") {
+				hasRefImage = true
+			}
+		}
+	}
+	if !hasRefImage {
+		t.Error("ReferenceToVideo lost its ref_images input after strip")
+	}
+}
+
 func TestH3TargetFrameIndex(t *testing.T) {
 	cases := []struct {
 		total int
