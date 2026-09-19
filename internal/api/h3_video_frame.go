@@ -13,6 +13,7 @@ import (
 
 const (
 	h3T2VWorkflowFileName       = "minimax_h3_t2v-gguf-api.json"
+	h3Ref2VWorkflowFileName     = "minimax_h3_ref2v-gguf-api.json"
 	h3VideoFrameDurationSeconds = 0.1
 	h3VideoFrameMaxPixels       = 980000
 	h3VideoFrameSizeMultiple    = 16
@@ -67,6 +68,16 @@ func findH3T2VWorkflowFile() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("H3 t2v workflow '%s' not found", h3T2VWorkflowFileName)
+}
+
+func findH3Ref2VWorkflowFile() (string, error) {
+	files, _ := filepath.Glob(filepath.Join("workflows", "*.json"))
+	for _, file := range files {
+		if strings.EqualFold(filepath.Base(file), h3Ref2VWorkflowFileName) {
+			return file, nil
+		}
+	}
+	return "", fmt.Errorf("H3 ref2v workflow '%s' not found", h3Ref2VWorkflowFileName)
 }
 
 // normalizeH3VideoFrameSize 保持宽高比等比缩小至 H3 分辨率上限内，并对齐到 16 的倍数。

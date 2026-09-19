@@ -323,6 +323,8 @@ type Scene struct {
 	Status            string      `json:"status" gorm:"column:image_status"`
 	GeneratedImage    string      `json:"generated_image" gorm:"column:generated_image"`
 	GeneratedWorkflow string      `json:"generated_workflow" gorm:"column:image_generated_workflow"`
+	RefImage          string      `json:"ref_image" gorm:"column:image_ref_image"`
+	UseRefImage       bool        `json:"use_ref_image" gorm:"column:image_use_ref_image"`
 	Characters        []Character `json:"characters" gorm:"many2many:shot_characters;foreignKey:ID;joinForeignKey:ShotID;References:ID;joinReferences:CharacterID"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`

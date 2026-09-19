@@ -322,6 +322,8 @@ func UpdateScene(c *gin.Context) {
 	scene.Width = 0
 	scene.Height = 0
 	scene.Seed = 0
+	scene.RefImage = strings.TrimSpace(updateData.RefImage)
+	scene.UseRefImage = updateData.UseRefImage
 	scene.UpdatedAt = time.Now()
 
 	// Update associations
@@ -945,7 +947,7 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 
 	var targetFile string
 	if h3VideoFrameMode {
-		h3File, err := findH3T2VWorkflowFile()
+		h3File, err := findH3Ref2VWorkflowFile()
 		if err != nil {
 			return "", err
 		}
@@ -1033,6 +1035,34 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 	if h3VideoFrameMode {
 		injectH3Duration(wfJSON, h3VideoFrameDurationSeconds)
 	}
+
+	// Inject Scene Reference Image if enabled (防止场景/背景漂移,与角色参考图 characters.go 同构)
+	if scene.UseRefImage && scene.RefImage != "" {
+		cleanRefPath := strings.TrimPrefix(scene.RefImage, "/")
+		absRefPath, _ := filepath.Abs(cleanRefPath)
+
+		var imageNodeID string
+		for id, node := range wfJSON {
+			if nodeMap, ok := node.(map[string]interface{}); ok {
+				if classType, ok := nodeMap["class_type"].(string); ok {
+					if classType == "LoadImage" {
+						imageNodeID = id
+						break // Assume first LoadImage is the ref image
+					}
+				}
+			}
+		}
+
+		uploadedName, err := UploadToComfyUIInput(absRefPath)
+		if err != nil {
+			Log(LogLevelError, "ComfyUI Upload Failed", fmt.Sprintf("Failed to upload scene ref image %s: %v", absRefPath, err))
+			return "", fmt.Errorf("failed to upload scene reference image to comfyui input: %v", err)
+		}
+		if imageNodeID != "" {
+			setInput(imageNodeID, "image", uploadedName)
+		}
+	}
+
 	logComfyWorkflowPayload("Scene ComfyUI Payload", workflowLabel, wfJSON)
 
 	// Queue
