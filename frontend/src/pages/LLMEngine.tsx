@@ -702,7 +702,7 @@ export default function LLMEngine() {
                                 </div>
                                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
-                                        <label className="mb-1 block text-sm font-medium">Qwen3 输出 Token 配额</label>
+                                        <label className="mb-1 block text-sm font-medium">LM Studio 输出 Token 配额</label>
                                         <Input
                                             type="text"
                                             inputMode="numeric"
@@ -716,7 +716,7 @@ export default function LLMEngine() {
                                             disabled={!currentProvider.compat_lm_studio}
                                         />
                                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                            兼容模式下为思考型模型(如 Qwen3)预留的输出配额，防止推理占满默认 2048 上限导致结果为空。留空默认 8192。
+                                            兼容模式下未显式指定时使用的默认输出配额，为思考型模型(如 Qwen3)预留推理空间，防止默认 2048 上限被推理占满导致结果为空。留空默认 8192；若同时设置了下方最大输出 Token 上限，以上限为准。
                                         </p>
                                     </div>
                                     <div>
