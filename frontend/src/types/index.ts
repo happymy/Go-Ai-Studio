@@ -9,6 +9,7 @@ export interface LLMProvider {
   request_max_tokens?: number;
   request_temperature?: number;
   compat_lm_studio?: boolean;
+  lm_studio_max_tokens?: number;
   is_active: boolean;
   usage_stats?: LLMProviderUsageStats;
   created_at?: string;

@@ -216,6 +216,7 @@ export default function LLMEngine() {
     const [isEditing, setIsEditing] = useState(false);
     const [currentProvider, setCurrentProvider] = useState<Partial<LLMProvider>>({});
     const [requestMaxTokensInput, setRequestMaxTokensInput] = useState("");
+    const [lmStudioMaxTokensInput, setLMStudioMaxTokensInput] = useState("");
     const [requestTemperatureInput, setRequestTemperatureInput] = useState("");
     const [loading, setLoading] = useState(false);
     const [chartMode, setChartMode] = useState<ChartMode>("day");
@@ -271,12 +272,16 @@ export default function LLMEngine() {
         const parsedRequestTemperature = /^\d+(\.\d+)?$/.test(requestTemperatureInput.trim())
             ? Number(requestTemperatureInput.trim())
             : 0;
+        const parsedLMStudioMaxTokens = /^\d+$/.test(lmStudioMaxTokensInput.trim())
+            ? Number(lmStudioMaxTokensInput.trim())
+            : 8192;
 
         const payload = {
             ...currentProvider,
             provider: normalizeProviderValue(currentProvider.provider),
             request_max_tokens: parsedRequestMaxTokens,
             request_temperature: parsedRequestTemperature,
+            lm_studio_max_tokens: parsedLMStudioMaxTokens,
         };
 
         const req = currentProvider.id
@@ -440,6 +445,7 @@ export default function LLMEngine() {
                             });
                             setRequestMaxTokensInput("");
                             setRequestTemperatureInput("");
+                            setLMStudioMaxTokensInput("");
                             setIsEditing(true);
                         }}
                         className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
@@ -538,6 +544,11 @@ export default function LLMEngine() {
                                             setRequestTemperatureInput(
                                                 p.request_temperature && p.request_temperature > 0
                                                     ? String(p.request_temperature)
+                                                    : ""
+                                            );
+                                            setLMStudioMaxTokensInput(
+                                                p.lm_studio_max_tokens && p.lm_studio_max_tokens > 0
+                                                    ? String(p.lm_studio_max_tokens)
                                                     : ""
                                             );
                                             setIsEditing(true);
@@ -677,6 +688,26 @@ export default function LLMEngine() {
                                             })
                                         }
                                     />
+                                </div>
+                                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium">Qwen3 输出 Token 配额</label>
+                                        <Input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={lmStudioMaxTokensInput}
+                                            onChange={(e) =>
+                                                setLMStudioMaxTokensInput(
+                                                    e.target.value.replace(/[^\d]/g, "")
+                                                )
+                                            }
+                                            placeholder="默认 8192"
+                                            disabled={!currentProvider.compat_lm_studio}
+                                        />
+                                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                            兼容模式下为思考型模型(如 Qwen3)预留的输出配额，防止推理占满默认 2048 上限导致结果为空。留空默认 8192。
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 

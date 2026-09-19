@@ -81,6 +81,7 @@ func UpdateLLMProvider(c *gin.Context) {
 	provider.RequestMaxTokens = updateData.RequestMaxTokens
 	provider.RequestTemperature = updateData.RequestTemperature
 	provider.CompatLMStudio = updateData.CompatLMStudio
+	provider.LMStudioMaxTokens = updateData.LMStudioMaxTokens
 	provider.UpdatedAt = time.Now()
 
 	if err := db.DB.Save(&provider).Error; err != nil {
