@@ -1151,6 +1151,13 @@ func triggerVideoGenerationWithInput(video models.Video, inputImagePath string, 
 
 	r2v := isH3R2VWorkflow(wfJSON)
 
+	if r2v && fps > 0 && length > 1 {
+		// H3 工作流的帧数由 (input:duration) 的 PrimitiveFloat → ComfyMathExpression 推导，
+		// 直接注入 length 会被 hasLinkedInput 拦截（129.length 已链到 133 表达式），
+		// 必须把秒数注入 duration 节点，否则一直用模板默认时长。
+		injectH3Duration(wfJSON, float64(length-1)/float64(fps))
+	}
+
 	uploadInput := func(path string) (string, error) {
 		absImagePath, err := assetWebPathToAbs(path)
 		if err != nil {

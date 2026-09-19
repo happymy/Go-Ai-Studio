@@ -169,6 +169,57 @@ func TestH3VideoFramePromptPresets(t *testing.T) {
 	}
 }
 
+func TestInjectH3SegmentDuration(t *testing.T) {
+	for _, c := range []struct {
+		length, fps int
+		want        float64
+	}{
+		{169, 24, 7},
+		{121, 24, 5},
+		{0, 24, 0},
+		{10, 0, 0},
+	} {
+		got := 0.0
+		if c.fps > 0 && c.length > 1 {
+			got = float64(c.length-1) / float64(c.fps)
+		}
+		if got != c.want {
+			t.Errorf("reverseDuration(=%d fps=%d) = %v, want %v", c.length, c.fps, got, c.want)
+		}
+	}
+
+	workflowPath := filepath.Join("..", "..", "workflows", h3T2VWorkflowFileName)
+	if _, err := os.Stat(workflowPath); err != nil {
+		t.Skipf("H3 t2v workflow not present: %v", err)
+	}
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	var wfJSON map[string]interface{}
+	if err := json.Unmarshal(data, &wfJSON); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !isH3R2VWorkflow(wfJSON) {
+		t.Fatal("isH3R2VWorkflow(t2v) = false, want true")
+	}
+	injectH3Duration(wfJSON, 7)
+	for _, node := range wfJSON {
+		nodeMap, _ := node.(map[string]interface{})
+		if classType, _ := nodeMap["class_type"].(string); classType != "PrimitiveFloat" {
+			continue
+		}
+		metaMap, _ := nodeMap["_meta"].(map[string]interface{})
+		title, _ := metaMap["title"].(string)
+		if strings.Contains(strings.ToLower(title), "duration") {
+			inputs, _ := nodeMap["inputs"].(map[string]interface{})
+			if inputs["value"] != 7.0 {
+				t.Errorf("duration node %q = %v, want 7", title, inputs["value"])
+			}
+		}
+	}
+}
+
 func TestH3ReferenceWorkflowLoads(t *testing.T) {
 	workflowPath := filepath.Join("..", "..", "workflows", h3Ref2VWorkflowFileName)
 	if _, err := os.Stat(workflowPath); err != nil {
