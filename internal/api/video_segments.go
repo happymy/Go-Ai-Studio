@@ -22,6 +22,7 @@ import (
 
 const defaultSegmentFPS = 24
 const fixedSegmentDurationSeconds = 3
+const fixedR2VSegmentDurationSeconds = 5
 const fixedVideoNegativeTemplate = "worst quality, low quality, bad quality, jpeg artifacts, blurry details, cartoon, still image, static frame, bad hands, malformed hands, deformed hands, extra hands, duplicate hands, missing hands, fused hands, merged hands, bad face, malformed limbs, merged limbs, fused arms, extra arms, fused fingers, merged fingers, interlocked fingers, extra fingers, missing fingers, malformed fingers, deformed fingers, broken fingers, twisted fingers, deformed thumbs, malformed thumbs, extra thumbs, missing thumbs, subtitle, subtitles, caption, text, text overlay, on-screen text, lower-third, title card, logo, logos, watermark, watermarks, speech bubble, dialogue box, readable signage, overlay, overlay effects, titles, has blurbox, has subtitles, artifacts around text, unreadable text, incorrect lettering, incorrect slogan"
 const minVideoTotalDurationSeconds = 3
 const maxVideoTotalDurationSeconds = 15
@@ -280,20 +281,41 @@ func buildStoredVideoSegmentPlan(video models.Video, workflowFamily string, lang
 		playerDesc = fullPrompt
 	}
 
+	segments := []VideoSegmentPlanSegment{
+		{
+			SegmentIndex:               1,
+			PromptPos:                  fullPrompt,
+			PromptNeg:                  promptNeg,
+			PlayerDesc:                 playerDesc,
+			RecommendedFPS:             recommendedFPS,
+			RecommendedDurationSeconds: total,
+		},
+	}
+
+	// 默认视频模型为 H3（r2v 家族）且目标时长超过阈值时，自动切成 N 段固定 5s，
+	// 由现有 renderVideoSegments 逐段渲染（首尾帧衔接）并 mergeVideoSegments 无缝拼接。
+	if strings.ToLower(strings.TrimSpace(workflowFamily)) == "r2v" {
+		if threshold := getConfiguredH3AutoSegmentThresholdSeconds(); threshold > 0 && total > threshold {
+			segments = make([]VideoSegmentPlanSegment, 0)
+			n := (total + fixedR2VSegmentDurationSeconds - 1) / fixedR2VSegmentDurationSeconds
+			for i := 0; i < n; i++ {
+				segments = append(segments, VideoSegmentPlanSegment{
+					SegmentIndex:               i + 1,
+					PromptPos:                  fullPrompt,
+					PromptNeg:                  promptNeg,
+					PlayerDesc:                 playerDesc,
+					RecommendedFPS:             recommendedFPS,
+					RecommendedDurationSeconds: fixedR2VSegmentDurationSeconds,
+				})
+			}
+		}
+	}
+
 	return &VideoSegmentPlanResponse{
 		PlayerDesc:           playerDesc,
 		RecommendedFPS:       recommendedFPS,
 		TotalDurationSeconds: total,
-		Segments: []VideoSegmentPlanSegment{
-			{
-				SegmentIndex:               1,
-				PromptPos:                  fullPrompt,
-				PromptNeg:                  promptNeg,
-				PlayerDesc:                 playerDesc,
-				RecommendedFPS:             recommendedFPS,
-				RecommendedDurationSeconds: total,
-			},
-		},
+		Segments:             segments,
 	}, nil
 }
 

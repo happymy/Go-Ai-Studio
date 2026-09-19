@@ -57,6 +57,7 @@ export default function Settings() {
         image_generation_mode: "krea_t2i",
         h3_video_frame_pick: "middle",
         h3_video_frame_prompt: "",
+        h3_auto_segment_threshold_seconds: "5",
         global_seed: "264590",
         store_visit_image_reference_order: "blogger_first",
         general_guide_transition_engine: "ltx2_3",
@@ -130,6 +131,9 @@ export default function Settings() {
     const updateSetting = (key: string, value: any) => {
         setSettings(prev => ({ ...prev, [key]: value }));
     };
+
+    // H3 自动多段拼接仅在默认视频模型为 H3（ref2v）时生效，否则该选项置灰。
+    const h3SegmentEnabled = settings.default_video_model.toLowerCase().includes("h3");
 
     // H3 抽帧附加提示词：输入框文本是唯一真源，下拉框的选中项由文本内容派生
     const h3PromptText = settings.h3_video_frame_prompt;
@@ -344,6 +348,23 @@ export default function Settings() {
                             </select>
                             <p className="text-xs text-muted-foreground mt-1">这里只决定即梦在线模型的官方画幅预设，不影响本地 ComfyUI 视频宽高。视频时长不在这里配置，提交时会直接使用当前镜头的 duration_seconds，并按 24fps 自动换算成 frames。</p>
                         </div>
+                    </div>
+
+                    <div>
+                        <label className={`block text-sm font-medium mb-2 ${h3SegmentEnabled ? "" : "text-muted-foreground"}`}>H3 超阈值自动多段拼接</label>
+                        <Input
+                            type="number"
+                            min={0}
+                            disabled={!h3SegmentEnabled}
+                            value={settings.h3_auto_segment_threshold_seconds}
+                            onChange={e => updateSetting("h3_auto_segment_threshold_seconds", e.target.value)}
+                            placeholder="5"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                            {h3SegmentEnabled
+                                ? "目标视频时长超过该秒数时，自动切成 N 段各 5s（向上取整到 N×5s），用 H3 ref2v 首尾帧衔接后无缝拼接；填 0 或留空表示关闭。"
+                                : "仅在「本地默认视频模型」选择 H3（minimax_h3_ref2v 等）时生效。"}
+                        </p>
                     </div>
                 </div>
             </div>
