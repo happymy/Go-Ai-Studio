@@ -732,7 +732,7 @@ func ImportStoryJSON(c *gin.Context) {
 	}
 
 	generationMode := inferGenerationModeFromPayload(payload)
-	if err := validateLightweightStoryResponse(payload, existingCharacters, generationMode); err != nil {
+	if err := validateLightweightStoryResponse(payload, existingCharacters, generationMode, 0); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

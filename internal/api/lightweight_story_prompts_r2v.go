@@ -33,9 +33,28 @@ func buildR2VLightweightStorySceneSegmentationGuidance(ctx lightweightStoryPromp
 	)
 }
 
+func buildR2VLightweightStoryNarrativeBreakdownBlock(ctx lightweightStoryPromptContext) string {
+	if ctx.NarrativeNodeCount <= 0 || strings.TrimSpace(ctx.NarrativeNodesJSON) == "" {
+		return ""
+	}
+	return fmt.Sprintf(`【本次必拍叙事节点清单（分镜数量下限锚点）】
+以下是本集剧本预抽取的导演化叙事节点清单：有多少个节点，就必须至少有多少个 scene，缺一个都不允许：
+
+%s
+
+- total_scenes 必须 >= %d。
+- 每个叙事节点至少要分配 1 个 scene；节点内部内容已超过 5 秒承载或含多个结果落点，可继续拆分，拆出的 scene 仍归属该节点。
+- scenes 的顺序必须与节点 id 顺序一致，不允许跳节点、合并节点，也不允许把某个节点硬塞进别的镜段一笔带过。
+- 节点清单是本集镜头完整度的最低标准，不是可选建议。`,
+		ctx.NarrativeNodesJSON,
+		ctx.NarrativeNodeCount,
+	)
+}
+
 func buildR2VLightweightStoryPrompts(ctx lightweightStoryPromptContext) (string, string) {
 	sceneSegmentationGuidance := buildR2VLightweightStorySceneSegmentationGuidance(ctx)
 	shotPlanningInstruction := buildH3R2VShotPlanningInstruction(ctx)
+	narrativeBreakdownBlock := buildR2VLightweightStoryNarrativeBreakdownBlock(ctx)
 	tagRulesBlock := ""
 	if strings.TrimSpace(ctx.SelectedTagRules) != "" {
 		tagRulesBlock = "\n\n" + strings.TrimSpace(ctx.SelectedTagRules)
@@ -77,7 +96,7 @@ func buildR2VLightweightStoryPrompts(ctx lightweightStoryPromptContext) (string,
 22. scene 里的永久人物锚点部分必须尽量沿用 appearance 的原有关键词和顺序，但 scene 不是照抄完整正脸设定；必须先判断当前镜头机位、朝向、遮挡和动作，再只输出当前真正看得见的那部分连续状态。%s
 23. image_prompt 必须明确景别、位置关系、镜头重心和镜头功能；地名和专有地点名称只能用于内部理解，最终都必须改写成可见环境、建筑、地面、器物、光线和空间描述。
 24. 首帧图写的是这个镜段的起点画面。不要把首帧图写成动作已经完成的结果态；如果后续视频需要明显动作、互动或运镜，首帧图必须写成动作发生前半拍到一拍的稳定起点。
-25. video_prompt 必须使用连续叙事式单段结构，按镜头真实发生顺序从首帧起点一直写到 5 秒结束；不要使用 Style、Phase、Audio 这类固定标签模板，不要拆成填表式分段。结尾可用一行“Audio:”收束本镜段背景音、环境音、物体声与空间回响，不要在这里承载台词。
+25. video_prompt 必须使用连续叙事式单段结构，按镜头真实发生顺序从首帧起点一直写到 5 秒结束；但必须对齐 MiniMax H3 官方三段式提示词骨架：段首用 [MODE] 声明镜头基调，随后用 [TOPIC] 声明本镜叙事主体与可见事件，再用 [REFERENCE] 承接上一段尾帧画面并说明本镜首帧与它的衔接关系，最后以一段连续正文描述动作、运镜、遮挡、转场、人物调度、环境变化和声音变化按发生顺序写清；不要使用 Style、Phase、Audio 这类前缀标签模板，不要拆成填表式分段。结尾可用一行“Audio:”收束本镜段背景音、环境音、物体声与空间回响，不要在这里承载台词。Audio: 必须位于 video_prompt 的最后一行，且全篇只能出现一次。
 26. video_prompt 必须把当前镜段里的动作、运镜、遮挡、转场、人物调度、环境变化和声音变化写成一条自然连续的镜头链；若镜段内存在遮挡转场、空间切换或服装状态变化，必须按发生顺序连续写清。
 27. video_prompt 不要写角色名字；如果镜头里有角色，必须用“画面位置 + 明确年龄 + 可见外观锚点”的方式指代谁在动；若需要补年龄阶段，也必须放在明确年龄之后，不要只写“青年男性”“青年女性”。
 28. video_prompt 只能承接首帧图已经建立的人物、服装、道具、场景、光线、构图和空间关系。不要让首帧图里看不见的人物、看不见的道具、看不见的地面区域或看不见的空间区域在视频里突然参与动作。
@@ -106,11 +125,11 @@ func buildR2VLightweightStoryPrompts(ctx lightweightStoryPromptContext) (string,
 51. 若首帧图没有建立清楚的可见范围、空间距离、来袭方向、接触条件或道具可见部分，视频提示词里就不要硬写需要这些条件才能成立的动作；做不到就换角度或拆段。
 52. 若一个动作链包含多个互相依赖的步骤，而当前首帧、景别或空间无法把这些步骤都稳定建立，就拆成更多相邻镜段，不要强压单镜。
 
-%s%s
+%s%s%s
 
 最终 JSON 结构必须至少为：
 {
-  "total_scenes": 1,
+  "total_scenes": 5,
   "characters": [
     {
       "name": "",
@@ -142,7 +161,7 @@ func buildR2VLightweightStoryPrompts(ctx lightweightStoryPromptContext) (string,
     ],
       "open_threads": []
   }
-}`, shotPlanningInstruction, buildReadableNarrationRule(), buildCharacterContinuityLedgerRule(), buildVisibleSceneContinuityRule(), buildCurrentVisibleStateCarryRule(), buildVisibleAnchorReuseRule(), sceneSegmentationGuidance, tagRulesBlock)
+}`, shotPlanningInstruction, buildReadableNarrationRule(), buildCharacterContinuityLedgerRule(), buildVisibleSceneContinuityRule(), buildCurrentVisibleStateCarryRule(), buildVisibleAnchorReuseRule(), sceneSegmentationGuidance, narrativeBreakdownBlock, tagRulesBlock)
 
 	userSections := []string{
 		fmt.Sprintf(`请根据以下输入，一次性完整生成本集内容。
@@ -177,6 +196,7 @@ func buildR2VLightweightStoryPrompts(ctx lightweightStoryPromptContext) (string,
 		"连续叙事式 video_prompt 仍然只能围绕 1 个主导事件组织，可以包含 1 个主导人物动作、1 到 2 个重要联动反应、若干弱背景反应和 1 个主导环境或镜头变化；不要在一个 5 秒镜段里塞满多人互不相关的大动作。",
 		"video_prompt 的优先级必须固定为：先保证叙事中心人物动作成立，再保证重要联动反应成立，最后再补环境动态；环境动态不能替代人物表演。",
 		"叙事链路较长时，优先让场景、人物动作和人物关系在每个 5 秒段内持续推进，不要只靠单个镜段硬塞完整事件；宁可多拆段，也不强压。",
+		"若 system 提示词里给出了必拍叙事节点清单，则每个 scene 的 narration 必须以“节点X：”开头标注它归属的叙事节点 id，方便人工核对节点覆盖完整性。",
 	}
 
 	userPrompt := strings.Join(userSections, "\n\n") + "\n\n额外要求：\n- " + strings.Join(extraRequirements, "\n- ")

@@ -113,6 +113,8 @@ type lightweightStoryPromptContext struct {
 	SelectedTagRules           string
 	ExistingCharactersJSON     string
 	PreviousEpisodeContextJSON string
+	NarrativeNodesJSON         string
+	NarrativeNodeCount         int
 	Metrics                    lightweightStoryPromptMetrics
 	SceneImageWidth            int
 	SceneImageHeight           int
@@ -727,11 +729,13 @@ func buildLightweightStoryPromptsLegacy(project models.Project, req models.AutoG
 	return systemPrompt, userPrompt, nil
 }
 
-func buildLightweightStoryPrompts(project models.Project, req models.AutoGenerateRequest, existingCharacters []lightweightStoryCharacter, previousEpisodeContext lightweightStoryEpisodeMemory) (string, string, error) {
+func buildLightweightStoryPrompts(project models.Project, req models.AutoGenerateRequest, existingCharacters []lightweightStoryCharacter, previousEpisodeContext lightweightStoryEpisodeMemory, narrativeNodesJSON string, narrativeNodeCount int) (string, string, error) {
 	ctx, err := buildLightweightStoryPromptContext(project, req, existingCharacters, previousEpisodeContext)
 	if err != nil {
 		return "", "", err
 	}
+	ctx.NarrativeNodesJSON = narrativeNodesJSON
+	ctx.NarrativeNodeCount = narrativeNodeCount
 	switch normalizeAutoGenerateGenerationMode(req.GenerationMode, req.AllowCharacterSpeech) {
 	case AutoGenerateModeStoryboard:
 		systemPrompt, userPrompt := buildStoryboardLightweightStoryPrompts(ctx)
@@ -1608,13 +1612,16 @@ func parseFlowingVideoPrompt(prompt string) (*flowingVideoPrompt, error) {
 	}, nil
 }
 
-func validateLightweightStoryResponse(payload *lightweightStoryResponse, existingCharacters []lightweightStoryCharacter, generationMode string) error {
+func validateLightweightStoryResponse(payload *lightweightStoryResponse, existingCharacters []lightweightStoryCharacter, generationMode string, minSceneCount int) error {
 	_ = normalizeAutoGenerateGenerationMode(generationMode, false)
 	if payload == nil {
 		return fmt.Errorf("story payload is nil")
 	}
 	if len(payload.Scenes) == 0 {
 		return fmt.Errorf("scenes array must not be empty")
+	}
+	if minSceneCount > 0 && len(payload.Scenes) < minSceneCount {
+		return fmt.Errorf("scenes count %d is less than required narrative node count %d; R2V mode must cover every narrative node with at least one scene", len(payload.Scenes), minSceneCount)
 	}
 
 	existingByName := make(map[string]lightweightStoryCharacter, len(existingCharacters))
@@ -1978,14 +1985,36 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 
 	task.GlobalTaskManager.UpdateTaskProgress(taskID, 15, "读取提示词知识库并构造请求")
 
-	systemPrompt, userPrompt, err := buildLightweightStoryPrompts(project, req, existingCharacters, previousEpisodeContext)
-	if err != nil {
-		return nil, err
-	}
-
 	var provider models.LLMProvider
 	if err := db.DB.Where("is_active = ?", true).First(&provider).Error; err != nil {
 		return nil, fmt.Errorf("no active LLM provider found")
+	}
+
+	narrativeNodesJSON := ""
+	narrativeNodeCount := 0
+	if normalizeAutoGenerateGenerationMode(req.GenerationMode, req.AllowCharacterSpeech) == AutoGenerateModeR2V {
+		task.GlobalTaskManager.UpdateTaskProgress(taskID, 20, "R2V 前置分镜节点清单")
+
+		breakdown, breakdownErr := runLightweightStoryBreakdown(project, req, provider, taskID)
+		if breakdownErr != nil {
+			Log(
+				LogLevelError,
+				llmLogMessage("R2V 前置分镜节点清单失败", provider),
+				breakdownErr.Error(),
+			)
+			return nil, fmt.Errorf("R2V 前置分镜节点清单失败: %w", breakdownErr)
+		}
+		narrativeNodeCount = breakdown.TotalNodes
+		nodesJSON, marshalErr := json.MarshalIndent(breakdown.NarrativeNodes, "", "  ")
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		narrativeNodesJSON = string(nodesJSON)
+	}
+
+	systemPrompt, userPrompt, err := buildLightweightStoryPrompts(project, req, existingCharacters, previousEpisodeContext, narrativeNodesJSON, narrativeNodeCount)
+	if err != nil {
+		return nil, err
 	}
 
 	userPrompt, continuationPartial, err := applyLightweightStoryContinuation(projectID, req, continueFromTaskID, userPrompt, provider, taskID)
@@ -2036,7 +2065,7 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 	if continuationPartial != nil {
 		payload = mergeLightweightStoryContinuation(continuationPartial, payload)
 	}
-	if err := validateLightweightStoryResponse(payload, existingCharacters, req.GenerationMode); err != nil {
+	if err := validateLightweightStoryResponse(payload, existingCharacters, req.GenerationMode, narrativeNodeCount); err != nil {
 		Log(
 			LogLevelError,
 			llmLogMessage("LLM 返回校验失败(轻量剧情一次性生成)", provider),
