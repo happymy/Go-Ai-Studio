@@ -958,7 +958,12 @@ export default function Projects() {
                                         className="h-[320px] min-h-[320px] overflow-y-auto rounded-md border border-input bg-background px-3 py-2 font-mono text-xs whitespace-pre-wrap break-words"
                                     >
                                         {genTaskId
-                                            ? (genTaskStream?.content || "正在等待当前任务返回实时流...")
+                                            ? (genTaskStream?.content || (
+                                                genTaskStream?.status
+                                                    ? (["running", "pending"].includes(genTaskStream.status)
+                                                        ? "正在等待当前任务返回实时流..."
+                                                        : `当前任务状态：${genTaskStream.status}，未产生流内容（详见系统日志）`)
+                                                    : "正在等待当前任务返回实时流..."))
                                             : "当前还没有任务流"}
                                     </div>
                                 </div>
