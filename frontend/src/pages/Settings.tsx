@@ -351,7 +351,7 @@ export default function Settings() {
                     </div>
 
                     <div>
-                        <label className={`block text-sm font-medium mb-2 ${h3SegmentEnabled ? "" : "text-muted-foreground"}`}>H3 超阈值自动多段拼接</label>
+                        <label className={`block text-sm font-medium mb-2 ${h3SegmentEnabled ? "" : "text-muted-foreground"}`}>Minimax H3 超阈值自动多段拼接</label>
                         <Input
                             type="number"
                             min={0}
@@ -360,10 +360,10 @@ export default function Settings() {
                             onChange={e => updateSetting("h3_auto_segment_threshold_seconds", e.target.value)}
                             placeholder="5"
                         />
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className={`text-xs mt-1 ${h3SegmentEnabled ? "text-muted-foreground" : "text-amber-600"}`}>
                             {h3SegmentEnabled
-                                ? "目标视频时长超过该秒数时，自动切成 N 段各 5s（向上取整到 N×5s），用 H3 ref2v 首尾帧衔接后无缝拼接；填 0 或留空表示关闭。"
-                                : "仅在「本地默认视频模型」选择 H3（minimax_h3_ref2v 等）时生效。"}
+                                ? "仅在使用 Minimax H3 视频模型时生效：目标视频时长超过该秒数时，自动切成 N 段各 5s（向上取整到 N×5s），用 H3 ref2v 首尾帧衔接后无缝拼接；填 0 或留空表示关闭。"
+                                : "警告：该功能仅在「本地默认视频模型」选择 Minimax H3 模型（minimax_h3_* 系列）时才生效，当前未启用，此选项已置灰。"}
                         </p>
                     </div>
                 </div>
@@ -380,10 +380,10 @@ export default function Settings() {
                             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         >
                             <option value="krea_t2i">Krea2 文生图（默认）</option>
-                            <option value="h3_video_frame">MiniMax H3 短视频抽帧（约 0.1s，取中间帧）</option>
+                            <option value="h3_video_frame">MiniMax H3 短视频抽帧（约 0.1 秒）</option>
                         </select>
                         <p className="text-xs text-muted-foreground mt-1">
-                            用于场景图与角色预览图。抽帧模式使用内置 minimax_h3_t2v 工作流生成极短视频再取中间帧作为图片；尺寸会等比缩放到 H3 上限内并对齐 16。
+                            用于场景图与角色预览图。抽帧模式使用内置 minimax_h3_t2v 工作流生成约 0.1 秒短视频再抽帧作为图片；尺寸会等比缩放到 H3 上限内并对齐 16。
                         </p>
                     </div>
                     <div className="md:col-span-2">
