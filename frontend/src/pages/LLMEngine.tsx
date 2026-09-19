@@ -613,7 +613,7 @@ export default function LLMEngine() {
 
             {isEditing && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="relative w-full max-w-lg animate-in fade-in zoom-in rounded-lg border border-border bg-card p-6 shadow-lg duration-200">
+                    <div className="relative flex w-full max-w-lg animate-in fade-in zoom-in flex-col rounded-lg border border-border bg-card shadow-lg duration-200 max-h-[90vh]">
                         <button
                             onClick={() => setIsEditing(false)}
                             className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
@@ -621,9 +621,9 @@ export default function LLMEngine() {
                             <X className="h-5 w-5" />
                         </button>
 
-                        <h2 className="mb-6 text-xl font-bold">{currentProvider.id ? "编辑引擎" : "新增引擎"}</h2>
+                        <h2 className="mb-4 shrink-0 p-6 pb-0 text-xl font-bold">{currentProvider.id ? "编辑引擎" : "新增引擎"}</h2>
 
-                        <div className="space-y-4">
+                        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="mb-1 block text-sm font-medium">名称</label>
@@ -799,7 +799,7 @@ export default function LLMEngine() {
                             </div>
                         </div>
 
-                        <div className="mt-8 flex justify-end gap-3">
+                        <div className="shrink-0 border-t border-border p-6 pt-4 flex justify-end gap-3">
                             <button
                                 onClick={() => setIsEditing(false)}
                                 className="rounded-md px-4 py-2 transition-colors hover:bg-accent"
