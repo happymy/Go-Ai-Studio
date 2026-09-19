@@ -151,8 +151,14 @@ func shouldUseDirectLLMEndpoint(provider models.LLMProvider) bool {
 	return strings.Contains(path, "/chat/completions")
 }
 
+// requestLLMContentStreaming strips the OpenAI-style json_object response_format
+// for providers explicitly configured as LM Studio compatible, which reject it
+// and only accept json_schema or text.
 func requestLLMContentStreaming(provider models.LLMProvider, req openai.ChatCompletionRequest, timeout time.Duration, taskID string, streamLogLabel string) (string, error) {
 	req = applyProviderAdvancedRequestParams(provider, req)
+	if provider.CompatLMStudio {
+		req.ResponseFormat = nil
+	}
 	if shouldUseDirectLLMEndpoint(provider) {
 		return requestLLMContentStreamingDirect(provider, req, timeout, taskID, streamLogLabel)
 	}
@@ -161,6 +167,9 @@ func requestLLMContentStreaming(provider models.LLMProvider, req openai.ChatComp
 
 func requestLLMContentNonStreaming(provider models.LLMProvider, req openai.ChatCompletionRequest, timeout time.Duration, taskID string, streamLogLabel string) (string, error) {
 	req = applyProviderAdvancedRequestParams(provider, req)
+	if provider.CompatLMStudio {
+		req.ResponseFormat = nil
+	}
 	if shouldUseDirectLLMEndpoint(provider) {
 		return requestLLMContentNonStreamingDirect(provider, req, timeout, taskID, streamLogLabel)
 	}

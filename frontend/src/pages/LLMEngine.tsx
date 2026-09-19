@@ -436,6 +436,7 @@ export default function LLMEngine() {
                                 enable_advanced_request_params: false,
                                 request_max_tokens: 0,
                                 request_temperature: 0,
+                                compat_lm_studio: false,
                             });
                             setRequestMaxTokensInput("");
                             setRequestTemperatureInput("");
@@ -656,6 +657,27 @@ export default function LLMEngine() {
                                     onChange={(e) => setCurrentProvider({ ...currentProvider, model_name: e.target.value })}
                                     placeholder="gpt-4o"
                                 />
+                            </div>
+
+                            <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <div className="text-sm font-medium">兼容 LM Studio 模式</div>
+                                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                            勾选后请求将不发送 <code className="rounded bg-muted px-1">json_object</code>，适用于 LM Studio 等仅接受
+                                            <code className="rounded bg-muted px-1">json_schema</code> / <code className="rounded bg-muted px-1">text</code> 的本地推理服务。
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        checked={!!currentProvider.compat_lm_studio}
+                                        onCheckedChange={(checked) =>
+                                            setCurrentProvider({
+                                                ...currentProvider,
+                                                compat_lm_studio: checked,
+                                            })
+                                        }
+                                    />
+                                </div>
                             </div>
 
                             <div className="rounded-lg border border-border/60 bg-muted/20 p-4">

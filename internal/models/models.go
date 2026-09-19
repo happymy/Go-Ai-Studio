@@ -17,6 +17,7 @@ type LLMProvider struct {
 	EnableAdvancedRequestParams bool                   `json:"enable_advanced_request_params" gorm:"default:false"`
 	RequestMaxTokens            int                    `json:"request_max_tokens" gorm:"default:0"`
 	RequestTemperature          float32                `json:"request_temperature" gorm:"default:0"`
+	CompatLMStudio              bool                   `json:"compat_lm_studio" gorm:"default:false"`
 	IsActive                    bool                   `json:"is_active" gorm:"default:false"`
 	UsageStats                  *LLMProviderUsageStats `json:"usage_stats,omitempty" gorm:"-"`
 	CreatedAt                   time.Time              `json:"created_at"`
