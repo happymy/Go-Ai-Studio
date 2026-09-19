@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"kt-ai-studio/internal/db"
 	"kt-ai-studio/internal/models"
@@ -788,7 +790,73 @@ func requestLightweightStoryOnce(provider models.LLMProvider, systemPrompt strin
 		},
 	}
 
+	checkLightweightStoryContextBudget(provider, systemPrompt, userPrompt, req.MaxTokens, taskID)
+
 	return requestLLMContentStreaming(provider, req, 15*time.Minute, taskID, "轻量剧情一次性生成")
+}
+
+// estimatePromptTokens heuristically estimates token usage of mostly-Chinese prompt
+// text. CJK runes average ~0.75 token each under Qwen tokenizers, ASCII ~1 token
+// per 4 chars; a 1.05 safety factor absorbs punctuation/whitespace variance.
+// ponytail: heuristic only; swap for a real Qwen tokenizer if estimates prove off.
+func estimatePromptTokens(parts ...string) int {
+	var cjk, ascii int
+	for _, s := range parts {
+		for _, r := range s {
+			if unicode.Is(unicode.Han, r) {
+				cjk++
+			} else if r < utf8.RuneSelf {
+				ascii++
+			} else {
+				cjk++
+			}
+		}
+	}
+	return int(float64(cjk)*0.75 + float64(ascii)/4*1.05)
+}
+
+// checkLightweightStoryContextBudget warns (never aborts) before a full-episode
+// generation when estimated input + effective output budget approaches the
+// provider context window, so an overflow/truncation isn't discovered after a
+// long wait. Reserved headroom covers Qwen3 reasoning_content and JSON framing.
+func checkLightweightStoryContextBudget(provider models.LLMProvider, systemPrompt string, userPrompt string, maxTokens int, taskID string) {
+	estInput := estimatePromptTokens(systemPrompt, userPrompt)
+	effMaxTokens := maxTokens
+	if effMaxTokens == 0 {
+		effMaxTokens = provider.LMStudioMaxTokens
+	}
+	if effMaxTokens == 0 {
+		effMaxTokens = 8192
+	}
+	contextWindow := provider.LMStudioContextWindow
+	if contextWindow == 0 {
+		contextWindow = 40960
+	}
+	const reasoningReserve = 2000
+	expectedTotal := estInput + effMaxTokens + reasoningReserve
+	headroom := contextWindow - expectedTotal
+
+	Log(
+		LogLevelInfo,
+		llmLogMessage("LLM 上下文占用估算(轻量剧情一次性生成)", provider),
+		fmt.Sprintf("est_input=%d expected_total=%d(+%d reserve) context_window=%d headroom=%d",
+			estInput, expectedTotal, reasoningReserve, contextWindow, headroom),
+	)
+
+	if headroom < 0 {
+		task.GlobalTaskManager.UpdateTaskProgress(taskID, 38, fmt.Sprintf("预计超出上下文窗口约 %d token，请缩短剧本输入或调大上下文窗口", -headroom))
+		Log(
+			LogLevelError,
+			llmLogMessage("LLM 上下文预算超限警告(轻量剧情一次性生成)", provider),
+			fmt.Sprintf("estimated %d tokens vs context window %d, overflow by %d. Shorten the script input or raise lm_studio_context_window.", expectedTotal, contextWindow, -headroom),
+		)
+	} else if headroom < 5000 {
+		Log(
+			LogLevelWarn,
+			llmLogMessage("LLM 上下文接近上限(轻量剧情一次性生成)", provider),
+			fmt.Sprintf("estimated %d tokens vs context window %d, headroom only %d. Consider shortening script input.", expectedTotal, contextWindow, headroom),
+		)
+	}
 }
 
 type lightweightStoryPartialContext struct {

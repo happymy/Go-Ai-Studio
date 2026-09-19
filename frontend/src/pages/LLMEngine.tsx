@@ -217,6 +217,7 @@ export default function LLMEngine() {
     const [currentProvider, setCurrentProvider] = useState<Partial<LLMProvider>>({});
     const [requestMaxTokensInput, setRequestMaxTokensInput] = useState("");
     const [lmStudioMaxTokensInput, setLMStudioMaxTokensInput] = useState("");
+    const [lmStudioContextWindowInput, setLMStudioContextWindowInput] = useState("");
     const [requestTemperatureInput, setRequestTemperatureInput] = useState("");
     const [loading, setLoading] = useState(false);
     const [chartMode, setChartMode] = useState<ChartMode>("day");
@@ -275,6 +276,9 @@ export default function LLMEngine() {
         const parsedLMStudioMaxTokens = /^\d+$/.test(lmStudioMaxTokensInput.trim())
             ? Number(lmStudioMaxTokensInput.trim())
             : 8192;
+        const parsedLMStudioContextWindow = /^\d+$/.test(lmStudioContextWindowInput.trim())
+            ? Number(lmStudioContextWindowInput.trim())
+            : 40960;
 
         const payload = {
             ...currentProvider,
@@ -282,6 +286,7 @@ export default function LLMEngine() {
             request_max_tokens: parsedRequestMaxTokens,
             request_temperature: parsedRequestTemperature,
             lm_studio_max_tokens: parsedLMStudioMaxTokens,
+            lm_studio_context_window: parsedLMStudioContextWindow,
         };
 
         const req = currentProvider.id
@@ -446,6 +451,7 @@ export default function LLMEngine() {
                             setRequestMaxTokensInput("");
                             setRequestTemperatureInput("");
                             setLMStudioMaxTokensInput("");
+                            setLMStudioContextWindowInput("");
                             setIsEditing(true);
                         }}
                         className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
@@ -549,6 +555,11 @@ export default function LLMEngine() {
                                             setLMStudioMaxTokensInput(
                                                 p.lm_studio_max_tokens && p.lm_studio_max_tokens > 0
                                                     ? String(p.lm_studio_max_tokens)
+                                                    : ""
+                                            );
+                                            setLMStudioContextWindowInput(
+                                                p.lm_studio_context_window && p.lm_studio_context_window > 0
+                                                    ? String(p.lm_studio_context_window)
                                                     : ""
                                             );
                                             setIsEditing(true);
@@ -706,6 +717,24 @@ export default function LLMEngine() {
                                         />
                                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
                                             兼容模式下为思考型模型(如 Qwen3)预留的输出配额，防止推理占满默认 2048 上限导致结果为空。留空默认 8192。
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium">上下文窗口长度</label>
+                                        <Input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={lmStudioContextWindowInput}
+                                            onChange={(e) =>
+                                                setLMStudioContextWindowInput(
+                                                    e.target.value.replace(/[^\d]/g, "")
+                                                )
+                                            }
+                                            placeholder="默认 40960"
+                                            disabled={!currentProvider.compat_lm_studio}
+                                        />
+                                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                            LM Studio 加载模型时配置的 context length。生成前会估算输入占用，接近上限时预警。留空默认 40960。
                                         </p>
                                     </div>
                                 </div>
