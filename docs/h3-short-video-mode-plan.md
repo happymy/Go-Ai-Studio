@@ -9,7 +9,7 @@
 
 **硬件事实**：长视频只能一次生成几秒再拼接（显存限制），否则爆显存、非常慢或失败。**该阈值是全局值：只要走 H3 模型生成就生效，为 0 则关闭拼接功能**。每段时长与触发阈值都由用户通过 `KeyH3AutoSegmentThresholdSeconds` 设置（设备显存大的可调高，小的调低），并非写死；该功能已跑通。h3_short 不再自设段长上限，段长一律由该全局阈值决定。
 
-- **拼接机制本身不改**：`video_segments.go` 的 `isH3R2VWorkflow`(995)、`resolveH3R2VLastFrameImage`(1011)、H3 多段拼接逻辑、首尾帧衔接、阈值判定，以及 `settings.go:188` 设置项——全部保留原样。
+- **拼接机制本身不改**：`video_segments.go` 的 `isH3R2VWorkflow`(999)、`resolveH3R2VLastFrameImage`(1015)、H3 多段拼接逻辑、首尾帧衔接、阈值判定，以及 `settings.go:188` 设置项——全部保留原样。
 - **h3_short 与红线的协作边界**：
   - scene `DurationSeconds ≤ 阈值设置值` → 单段一次生成，**不触发红线**。
   - scene `DurationSeconds > 阈值设置值`（LLM 自由分镜的正常结果，分镜时长只是参考） → 红线按用户阈值自动切段拼接，每段 = 阈值秒、共用该 scene 同一完整 prompt，总时长不再等于 LLM 分镜时长。与原 R2V 行为完全一致。
@@ -50,7 +50,7 @@
 - 官方 prompt-writing skill 自带 `ref-en.txt`（Ref2VA 专用），可供镜像抓取参照。
 
 ### 现有代码约束（行号已核对）
-- `auto_generate_modes.go:5-10`：`AutoGenerateModeR2V = "r2v"` 常量；`:29-50` 三个判定函数含 r2v。
+- `auto_generate_modes.go:5-10`：`AutoGenerateModeR2V = "r2v"` 常量；`:29/:43` `autoGenerateModeAllowsCharacterSpeech`、`autoGenerateModeUsesFlowingVideoPrompt` 含 r2v（`autoGenerateModeRequiresEmptyNarration` 恒 false 不含）。
 - `lightweight_story_generation.go:1995`：R2V 专属前置 `runLightweightStoryBreakdown`（进度 20「R2V 前置分镜节点清单」），拆出 `total_nodes` + `narrative_nodes` 作为 scene 数量下限锚点（`:1624` 报错）。
 - `lightweight_story_prompts_r2v.go`：全套 R2V 提示词，硬编码"5 秒"（`buildH3R2VShotPlanningInstruction`、`buildR2VLightweightStorySceneSegmentationGuidance`、规则 11「duration_seconds 只能返回 5」、规则 25 自创 `[MODE]/[TOPIC]/[REFERENCE]` + `Audio:` 行——**未对齐官方三段式**）。
 - `lightweight_story_prompts_storyboard.go` / `lightweight_story_prompts_high_quality.go`：flowing video_prompt 沿用（H3 三段式骨架可从这里对齐改造）。
@@ -58,7 +58,7 @@
 - `video_segments.go`：红线中列明——拼接核心不动。
 - `h3_video_frame.go`：`minimax_h3_ref2v-gguf-api.json`(16)、`stripH3Ref2VExampleAssets` 已能剥离官方模板示例素材节点（LoadAudio/LoadVideo/GetVideoComponents）。
 - `scenes.go:952-956`：首帧生成时 `scene.UseRefImage` → 选 ref2v 工作流；`:1046-1070` 场景参考图已注入 LoadImage 并上传。
-- `characters.go:467-494`：角色参考图注入先例（非 h3VideoFrameMode 时，把 `char.RefImage` 转绝对路径上传后注入首个 LoadImage）；参考图存于 `output/<project_code>/ref_images/`。
+- `characters.go:467-499`：角色参考图注入先例（非 h3VideoFrameMode 时，把 `char.RefImage` 转绝对路径上传后注入首个 LoadImage）；参考图存于 `output/<project_code>/ref_images/`。
 - `lightweight_story_generation.go` 已有结构校验 `validateLightweightStoryResponse`（对象级），可在此之上挂语义自检。
 - 前端：`types/index.ts:479` union 含 "r2v"；`AutoSeries.tsx:509-512`、`Projects.tsx` R2V 单选按钮。
 
@@ -67,7 +67,7 @@
 ### 1. 模式名与分发
 - `auto_generate_modes.go`：删 `AutoGenerateModeR2V`，增 `AutoGenerateModeH3Short = "h3_short"`。
 - `normalizeAutoGenerateGenerationMode` 等三处 switch 同步替换；`autoGenerateModeAllowsCharacterSpeech` / `autoGenerateModeUsesFlowingVideoPrompt` 对 `h3_short` 均返回 true。
-- 分发 `lightweight_story_generation.go:739`、:1995 改用新模式名。
+- 分发 `lightweight_story_generation.go:746`（r2v case 所在行，switch 在 :739）、:1995 改用新模式名。
 
 ### 2. 提示词（机制 A/B/C/E + 官方三段式，P1）
 以 `lightweight_story_prompts_storyboard.go` 为模板复制出 `lightweight_story_prompts_h3_short.go`：
@@ -123,7 +123,7 @@
 | `internal/api/lightweight_story_prompts_h3_short.go`（新建） | 官方三段式 + 机制 A/B/C/E（@图N 索引、量化标尺、台词铁律、位置台账） |
 | `internal/api/lightweight_story_prompts_r2v.go`（删除） | 移除旧提示词 |
 | `internal/api/lightweight_story_selfreview.go`（新建） | 语义自检回灌（机制 D） |
-| `internal/api/lightweight_story_generation.go` | 分发(:739)、前置 breakdown 判定(:1995)、:1624 文案、挂载自检 |
+| `internal/api/lightweight_story_generation.go` | 分发(:746)、前置 breakdown 判定(:1995)、:1624 文案、挂载自检 |
 | `internal/api/video_segments.go` | **零改动（红线）**：超阈值拼接/等分/衔接/判定全保留 |
 | `internal/api/scenes.go` / `characters.go` | 角色参考图接入 ref2v 参考通道（h3 模式下） |
 | `frontend/src/types/index.ts` | union 改值 |
