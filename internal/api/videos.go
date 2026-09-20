@@ -331,6 +331,11 @@ func reconcileVideoOutputsFromDisk(projectCode string, videos []models.Video) {
 	}
 
 	for i := range videos {
+		// 分段渲染进行中时禁止 reconcile 用单个 segment 提前覆盖为 generated，
+		// 否则 webui 会在拼接完成前就显示"可查看"（且播的是未拼接片段）。
+		if strings.TrimSpace(videos[i].Status) == "generating" {
+			continue
+		}
 		reconciledPath, ok := findLatestVideoOutputPath(projectCode, videos[i].ID)
 		if !ok {
 			continue
