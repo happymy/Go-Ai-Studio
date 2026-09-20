@@ -5,6 +5,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,14 @@ const (
 	h3VideoFrameMaxPixels       = 980000
 	h3VideoFrameSizeMultiple    = 16
 )
+
+// h3RefImageSlotLimit 是 ref2v 工作流 MiniMaxH3ReferenceToVideo 参考图通道的上限：
+// ref_images 为 Autogrow（max=9，ref_image_0..8），其中 ref_image_0 固定留给场景参考图
+// （防背景漂移），因此机制 A 的角色参考图最多占用 ref_image_1..8 共 8 张。
+const h3RefImageSlotLimit = 9
+
+// h3ReferenceTagPattern 匹配机制 A 提示词中的角色参考图引用标记「@图N」。
+var h3ReferenceTagPattern = regexp.MustCompile(`@图(\d+)`)
 
 // h3VideoFramePromptPreset 是 H3 抽帧附加提示词的内置预设，供设置页下拉框直接选用。
 type h3VideoFramePromptPreset struct {
@@ -299,4 +309,105 @@ func h3TargetFrameIndex(totalFrames int, pick string) int {
 		return totalFrames - 1
 	}
 	return targetFrame
+}
+
+// planH3CharacterRefInjections 解析提示词中机制 A 的 @图N 引用，返回应注入的角色资产前缀
+// 与桥接后的提示词（@图N → <Picture N+1>）。chars 须与 buildReferenceCharactersIndexBlock
+// 同序（IDL：project_id=? AND ref_image<>'' + id asc + 跳过空名），保证编号严格对齐。
+// 注入上限为 h3RefImageSlotLimit-1（8 张：ref_image_0 固定给场景参考图），超出的 @图N
+// 无法注入，桥接时保留原标签由调用方记 WARN。未引用任何 @图 或无可注入资产时原样返回。
+func planH3CharacterRefInjections(prompt string, chars []models.Character) ([]models.Character, string) {
+	matches := h3ReferenceTagPattern.FindAllStringSubmatch(prompt, -1)
+	if len(matches) == 0 {
+		return nil, prompt
+	}
+	maxRef := 0
+	for _, m := range matches {
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n < 1 {
+			continue
+		}
+		if n > maxRef {
+			maxRef = n
+		}
+	}
+	if maxRef == 0 {
+		return nil, prompt
+	}
+	limit := maxRef
+	if limit > len(chars) {
+		limit = len(chars)
+	}
+	if limit > h3RefImageSlotLimit-1 {
+		limit = h3RefImageSlotLimit - 1
+	}
+	if limit == 0 {
+		return nil, prompt
+	}
+	bridged := h3ReferenceTagPattern.ReplaceAllStringFunc(prompt, func(tag string) string {
+		m := h3ReferenceTagPattern.FindStringSubmatch(tag)
+		n, _ := strconv.Atoi(m[1])
+		if n >= 1 && n <= limit {
+			return fmt.Sprintf("<Picture %d>", n+1)
+		}
+		return tag
+	})
+	return chars[:limit], bridged
+}
+
+// injectH3Ref2VCharacterRefs 把机制 A 引用的角色参考图注入 ref2v 场景图工作流：
+// 每个角色动态创建 LoadImage 节点、上传图片，并接到 MiniMaxH3ReferenceToVideo 的
+// ref_images.ref_image_{slot}（scene 参考图固定占 ref_image_0，角色从 1 起）。
+// 未引用 @图 或无可注入资产时原样返回提示词。
+func injectH3Ref2VCharacterRefs(wfJSON map[string]interface{}, prompt string, chars []models.Character, upload func(string) (string, error)) (string, error) {
+	refs, bridged := planH3CharacterRefInjections(prompt, chars)
+	if len(refs) == 0 {
+		return bridged, nil
+	}
+	var ref2vNode map[string]interface{}
+	for _, node := range wfJSON {
+		nodeMap, ok := node.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if classType, _ := nodeMap["class_type"].(string); classType == "MiniMaxH3ReferenceToVideo" {
+			ref2vNode = nodeMap
+			break
+		}
+	}
+	if ref2vNode == nil {
+		return "", fmt.Errorf("ref2v workflow missing MiniMaxH3ReferenceToVideo node")
+	}
+	inputs, ok := ref2vNode["inputs"].(map[string]interface{})
+	if !ok {
+		inputs = map[string]interface{}{}
+		ref2vNode["inputs"] = inputs
+	}
+	nextID := h3NextFreeNodeID(wfJSON)
+	for slot, char := range refs {
+		cleanRefPath := strings.TrimPrefix(char.RefImage, "/")
+		absRefPath, _ := filepath.Abs(cleanRefPath)
+		uploadedName, err := upload(absRefPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to upload character reference image to comfyui input: %v", err)
+		}
+		nodeID := strconv.Itoa(nextID + slot)
+		wfJSON[nodeID] = map[string]interface{}{
+			"class_type": "LoadImage",
+			"inputs":     map[string]interface{}{"image": uploadedName},
+		}
+		inputs[fmt.Sprintf("ref_images.ref_image_%d", slot+1)] = []interface{}{nodeID, 0}
+	}
+	return bridged, nil
+}
+
+// h3NextFreeNodeID 返回工作流中现有最大整数节点编号之后的第一个可用编号。
+func h3NextFreeNodeID(wfJSON map[string]interface{}) int {
+	maxID := 0
+	for id := range wfJSON {
+		if n, err := strconv.Atoi(id); err == nil && n > maxID {
+			maxID = n
+		}
+	}
+	return maxID + 1
 }

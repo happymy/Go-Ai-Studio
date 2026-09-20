@@ -2,11 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"kt-ai-studio/internal/models"
 	"kt-ai-studio/internal/workflow"
 )
 
@@ -322,5 +325,171 @@ func TestCountR2VSegments(t *testing.T) {
 		if got := countR2VSegments(c.total, c.segmentDuration); got != c.want {
 			t.Errorf("countR2VSegments(%d, %d) = %d, want %d", c.total, c.segmentDuration, got, c.want)
 		}
+	}
+}
+
+func h3TestRefChars(n int) []models.Character {
+	chars := make([]models.Character, 0, n)
+	for i := 1; i <= n; i++ {
+		chars = append(chars, models.Character{
+			RefImage: fmt.Sprintf("/output/test/ref_char_%d.png", i),
+		})
+	}
+	return chars
+}
+
+func TestPlanH3CharacterRefInjections(t *testing.T) {
+	chars := h3TestRefChars(10)
+	cases := []struct {
+		name        string
+		chars       []models.Character
+		prompt      string
+		wantInject  int
+		wantBridged string
+	}{
+		{"无引用原样返回", chars, "一个房间", 0, "一个房间"},
+		{"空提示词返回", chars, "", 0, ""},
+		{"单个引用桥接为 Picture 2", chars, "参考图@图1在门口", 1, "参考图<Picture 2>在门口"},
+		{"@图3 注入前3个并桥接", chars, "参考图@图3走进房间", 3, "参考图<Picture 4>走进房间"},
+		{"多处引用取最大编号", chars, "a@图2 b@图5", 5, "a<Picture 3> b<Picture 6>"},
+		{"重复引用只取一次", chars, "@图2和@图2", 2, "<Picture 3>和<Picture 3>"},
+		{"引用超槽位上限截断为8", chars, "@图9", 8, "@图9"},
+		{"引用超槽位上限桥接照常", chars, "@图8走进来", 8, "<Picture 9>走进来"},
+		{"资产数小于槽位上限时按资产截断", h3TestRefChars(5), "@图7", 5, "@图7"},
+		{"资产数截断时桥接只命中可注入范围", h3TestRefChars(5), "@图5进来", 5, "<Picture 6>进来"},
+		{"@图0 无效忽略", chars, "参考图@图0", 0, "参考图@图0"},
+		{"@图字面量非数字", chars, "约等于@图X", 0, "约等于@图X"},
+	}
+	for _, c := range cases {
+		gotChars, bridged := planH3CharacterRefInjections(c.prompt, c.chars)
+		if len(gotChars) != c.wantInject {
+			t.Errorf("%s: injected %d chars, want %d", c.name, len(gotChars), c.wantInject)
+		}
+		if bridged != c.wantBridged {
+			t.Errorf("%s: bridged = %q, want %q", c.name, bridged, c.wantBridged)
+		}
+	}
+}
+
+func TestInjectH3Ref2VCharacterRefs(t *testing.T) {
+	workflowPath := filepath.Join("..", "..", "workflows", h3Ref2VWorkflowFileName)
+	if _, err := os.Stat(workflowPath); err != nil {
+		t.Skipf("H3 ref2v workflow not present: %v", err)
+	}
+	data, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	var wfJSON map[string]interface{}
+	if err := json.Unmarshal(data, &wfJSON); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	stripH3Ref2VExampleAssets(wfJSON)
+
+	refNodeByClass := func() map[string]interface{} {
+		for _, node := range wfJSON {
+			nodeMap, ok := node.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if ct, _ := nodeMap["class_type"].(string); ct == "MiniMaxH3ReferenceToVideo" {
+				return nodeMap
+			}
+		}
+		return nil
+	}
+
+	loadImageNodes := func() map[string]bool {
+		nodes := map[string]bool{}
+		for id, node := range wfJSON {
+			nodeMap, _ := node.(map[string]interface{})
+			if ct, _ := nodeMap["class_type"].(string); ct == "LoadImage" {
+				nodes[id] = true
+			}
+		}
+		return nodes
+	}
+
+	// 无引用：不动 workflow、不新增节点
+	beforeCount := len(wfJSON)
+	orig, err := injectH3Ref2VCharacterRefs(wfJSON, "一个房间", h3TestRefChars(3), func(p string) (string, error) {
+		return filepath.Base(p), nil
+	})
+	if err != nil {
+		t.Fatalf("no-ref inject errored: %v", err)
+	}
+	if orig != "一个房间" {
+		t.Errorf("no-ref bridged = %q, want original", orig)
+	}
+	if len(wfJSON) != beforeCount {
+		t.Errorf("no-ref added %d nodes", len(wfJSON)-beforeCount)
+	}
+
+	// 有引用：@图2 → 注入前 2 个（图1+图2）LoadImage，接到 ref_image_1/ref_image_2，
+	// ref_image_0（场景参考图）不被覆盖
+	existingLoadImages := loadImageNodes()
+	refNodeBefore := refNodeByClass()
+	refImage0, has0 := refNodeBefore["inputs"].(map[string]interface{})["ref_images.ref_image_0"]
+	bridged, err := injectH3Ref2VCharacterRefs(wfJSON, "参考图@图2在门口", h3TestRefChars(3), func(p string) (string, error) {
+		return filepath.Base(p), nil
+	})
+	if err != nil {
+		t.Fatalf("inject errored: %v", err)
+	}
+	if bridged != "参考图<Picture 3>在门口" {
+		t.Errorf("bridged = %q, want 参考图<Picture 3>在门口", bridged)
+	}
+	addNodes := loadImageNodes()
+	newNodes := []string{}
+	for id := range addNodes {
+		if !existingLoadImages[id] {
+			newNodes = append(newNodes, id)
+		}
+	}
+	if len(newNodes) != 2 {
+		t.Fatalf("expected 2 new LoadImage nodes, got %d (%v)", len(newNodes), newNodes)
+	}
+	refNode := refNodeByClass()
+	inputs := refNode["inputs"].(map[string]interface{})
+	if has0 && !reflect.DeepEqual(inputs["ref_images.ref_image_0"], refImage0) {
+		t.Errorf("ref_image_0 overwritten: %v -> %v", refImage0, inputs["ref_images.ref_image_0"])
+	}
+	wire1, ok := inputs["ref_images.ref_image_1"].([]interface{})
+	if !ok || len(wire1) != 2 || !addNodes[fmt.Sprintf("%v", wire1[0])] {
+		t.Fatalf("ref_image_1 not wired to new LoadImage, got %v", inputs["ref_images.ref_image_1"])
+	}
+	wire2, ok := inputs["ref_images.ref_image_2"].([]interface{})
+	if !ok || len(wire2) != 2 || !addNodes[fmt.Sprintf("%v", wire2[0])] {
+		t.Fatalf("ref_image_2 not wired to new LoadImage, got %v", inputs["ref_images.ref_image_2"])
+	}
+	if wire1[0] == wire2[0] {
+		t.Error("ref_image_1 and ref_image_2 point to the same node")
+	}
+	if _, ok := inputs["ref_images.ref_image_3"]; ok {
+		t.Error("ref_image_3 should not be wired (只注入 @图2)")
+	}
+
+	// 测试 upload 失败传播：不新增节点、不接线
+	before2 := len(wfJSON)
+	_, err = injectH3Ref2VCharacterRefs(wfJSON, "@图1", h3TestRefChars(2), func(p string) (string, error) {
+		return "", fmt.Errorf("upload fail")
+	})
+	if err == nil {
+		t.Error("upload failure not propagated")
+	}
+	if len(wfJSON) != before2 {
+		t.Error("failed inject mutated workflow")
+	}
+}
+
+func TestH3NextFreeNodeID(t *testing.T) {
+	wf := map[string]interface{}{
+		"100": map[string]interface{}{},
+		"300": map[string]interface{}{},
+		"40":  map[string]interface{}{},
+		"abc": map[string]interface{}{},
+	}
+	if got := h3NextFreeNodeID(wf); got != 301 {
+		t.Errorf("h3NextFreeNodeID = %d, want 301", got)
 	}
 }

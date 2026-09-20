@@ -1069,10 +1069,29 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 		}
 	}
 
-	// ref2v 工作流模板自带官方示例素材（LoadAudio/LoadVideo/GetVideoComponents），
-	// 场景图仅使用参考图，提交前剥掉 audio/video 参考，避免在 ComfyUI 校验时缺文件报错。
-	if filepath.Base(targetFile) == h3Ref2VWorkflowFileName {
+	// ref2v 模板自带官方示例素材，场景图仅使用参考图，提交前剥掉 audio/video 参考，
+	// 避免在 ComfyUI 校验时缺文件报错。随后把机制 A 引用的角色参考图注入 ref_images。
+	if h3VideoFrameMode && filepath.Base(targetFile) == h3Ref2VWorkflowFileName {
 		stripH3Ref2VExampleAssets(wfJSON)
+		// 角色资产与 buildReferenceCharactersIndexBlock 同序，保证 @图N 编号与槽位严格对齐；
+		// 场景参考图固定占 ref_image_0，角色从 ref_image_1 起（@图N → <Picture N+1>）。
+		refChars, err := loadReferenceCharacterAssets(scene.ProjectID)
+		if err != nil {
+			Log(LogLevelError, "Load H3 Ref Characters Failed", fmt.Sprintf("project=%d err=%v", scene.ProjectID, err))
+		} else {
+			bridged, err := injectH3Ref2VCharacterRefs(wfJSON, finalImagePrompt, refChars, UploadToComfyUIInput)
+			if err != nil {
+				return "", err
+			}
+			if bridged != finalImagePrompt {
+				finalImagePrompt = bridged
+				setInput(meta.PositiveNodeID, meta.PositiveInputKey, finalImagePrompt)
+			}
+		}
+	} else if h3VideoFrameMode && h3ReferenceTagPattern.MatchString(finalImagePrompt) {
+		// ponytail: t2v 工作流无 ref_images 通道，机制 A 的角色参考图无法注入，
+		// @图N 保持原文文本，仅告警提醒用户。# 若后续 H3 支持 t2v 参考通道再注入
+		Log(LogLevelWarn, "H3 Ref Tags Ignored", "t2v workflow has no ref_images channel; @图N tags kept as text")
 	}
 
 	logComfyWorkflowPayload("Scene ComfyUI Payload", workflowLabel, wfJSON)

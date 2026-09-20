@@ -234,26 +234,35 @@ func buildLightweightStoryPromptContext(project models.Project, req models.AutoG
 	}, nil
 }
 
-func buildReferenceCharactersIndexBlock(projectID uint) (string, error) {
+// loadReferenceCharacterAssets 返回项目内带参考图资产的角色，按 id 升序、跳过空名。
+// 它是机制 A「@图N」索引（buildReferenceCharactersIndexBlock）与 H3 ref2v 角色参考图注入
+// 的共享查询源，保证索引编号与注入槽位一一对应，避免两边排序规则漂移。
+func loadReferenceCharacterAssets(projectID uint) ([]models.Character, error) {
 	var records []models.Character
 	if err := db.DB.Where("project_id = ? AND ref_image <> ''", projectID).Order("id asc").Find(&records).Error; err != nil {
+		return nil, err
+	}
+	assets := make([]models.Character, 0, len(records))
+	for _, record := range records {
+		if strings.TrimSpace(record.Name) == "" {
+			continue
+		}
+		assets = append(assets, record)
+	}
+	return assets, nil
+}
+
+func buildReferenceCharactersIndexBlock(projectID uint) (string, error) {
+	records, err := loadReferenceCharacterAssets(projectID)
+	if err != nil {
 		return "", err
 	}
 	if len(records) == 0 {
 		return "", nil
 	}
 	lines := make([]string, 0, len(records))
-	n := 0
-	for _, record := range records {
-		name := strings.TrimSpace(record.Name)
-		if name == "" {
-			continue
-		}
-		n++
-		lines = append(lines, fmt.Sprintf("@图%d=%s", n, name))
-	}
-	if len(lines) == 0 {
-		return "", nil
+	for n, record := range records {
+		lines = append(lines, fmt.Sprintf("@图%d=%s", n+1, record.Name))
 	}
 	return "\n\n【参考图角色资产索引】\n" + strings.Join(lines, "\n") + "\n", nil
 }
