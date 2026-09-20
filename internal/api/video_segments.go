@@ -296,9 +296,8 @@ func buildStoredVideoSegmentPlan(video models.Video, workflowFamily string, lang
 	// 由现有 renderVideoSegments 逐段渲染（首尾帧衔接）并 mergeVideoSegments 无缝拼接。
 	if strings.ToLower(strings.TrimSpace(workflowFamily)) == "r2v" {
 		if threshold := getConfiguredH3AutoSegmentThresholdSeconds(); threshold > 0 && total > threshold {
-			segments = make([]VideoSegmentPlanSegment, 0)
-			n := (total + fixedR2VSegmentDurationSeconds - 1) / fixedR2VSegmentDurationSeconds
-			for i := 0; i < n; i++ {
+			segments = make([]VideoSegmentPlanSegment, 0, countR2VSegments(total))
+			for i, n := 0, countR2VSegments(total); i < n; i++ {
 				segments = append(segments, VideoSegmentPlanSegment{
 					SegmentIndex:               i + 1,
 					PromptPos:                  fullPrompt,
@@ -317,6 +316,13 @@ func buildStoredVideoSegmentPlan(video models.Video, workflowFamily string, lang
 		TotalDurationSeconds: total,
 		Segments:             segments,
 	}, nil
+}
+
+func countR2VSegments(total int) int {
+	if total <= 0 {
+		return 1
+	}
+	return (total + fixedR2VSegmentDurationSeconds - 1) / fixedR2VSegmentDurationSeconds
 }
 
 func clampStoredVideoTotalDuration(recommended int) int {
@@ -1421,6 +1427,41 @@ func renderVideoSegments(videoID uint, projectID uint, taskID string, startSegme
 	return nil
 }
 
+// ensureStoredVideoSegmentPlan 在视频尚无预存分段时，按当前默认视频模型的实际
+// workflow family 构建并持久化分段计划。已有分段时返回 nil plan（直接按存储分段渲染）。
+func ensureStoredVideoSegmentPlan(videoID uint, projectID uint) (*VideoSegmentPlanResponse, error) {
+	var segmentCount int64
+	db.DB.Model(&models.VideoSegment{}).Where("video_id = ?", videoID).Count(&segmentCount)
+	if segmentCount != 0 {
+		return nil, nil
+	}
+
+	var video models.Video
+	if err := db.DB.First(&video, videoID).Error; err != nil {
+		return nil, fmt.Errorf("video not found")
+	}
+	if err := hydrateVideoScene(&video, true); err != nil {
+		return nil, err
+	}
+	var project models.Project
+	if err := db.DB.Preload("ArtStyle").First(&project, projectID).Error; err != nil {
+		return nil, fmt.Errorf("project not found")
+	}
+	workflowFamily, err := resolveSelectedVideoWorkflowFamily()
+	if err != nil {
+		return nil, err
+	}
+	plan, err := buildStoredVideoSegmentPlan(video, workflowFamily, loadPromptLanguage())
+	if err != nil {
+		return nil, err
+	}
+	if err := saveVideoSegmentPlan(&video, project, plan); err != nil {
+		return nil, err
+	}
+	BroadcastUpdate("video", video.ID)
+	return plan, nil
+}
+
 func HandleRenderVideoSegmentsTask(t *models.Task) (interface{}, error) {
 	var payload struct {
 		VideoID   uint `json:"video_id"`
@@ -1430,33 +1471,9 @@ func HandleRenderVideoSegmentsTask(t *models.Task) (interface{}, error) {
 		return nil, fmt.Errorf("invalid payload: %v", err)
 	}
 
-	var segmentCount int64
-	db.DB.Model(&models.VideoSegment{}).Where("video_id = ?", payload.VideoID).Count(&segmentCount)
-
-	var transientPlan *VideoSegmentPlanResponse
-	if segmentCount == 0 {
-		var video models.Video
-		if err := db.DB.First(&video, payload.VideoID).Error; err == nil {
-			if err := hydrateVideoScene(&video, true); err == nil {
-				var project models.Project
-				if err := db.DB.Preload("ArtStyle").First(&project, payload.ProjectID).Error; err == nil {
-					workflowFamily, familyErr := resolveSelectedVideoWorkflowFamily()
-					if familyErr != nil {
-						return nil, familyErr
-					}
-					lang := loadPromptLanguage()
-					plan, planErr := buildStoredVideoSegmentPlan(video, workflowFamily, lang)
-					if planErr != nil {
-						return nil, planErr
-					}
-					transientPlan = plan
-					if err := saveVideoSegmentPlan(&video, project, plan); err != nil {
-						return nil, err
-					}
-					BroadcastUpdate("video", video.ID)
-				}
-			}
-		}
+	transientPlan, err := ensureStoredVideoSegmentPlan(payload.VideoID, payload.ProjectID)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := renderVideoSegments(payload.VideoID, payload.ProjectID, t.ID, 1, transientPlan); err != nil {
