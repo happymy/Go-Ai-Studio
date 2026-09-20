@@ -566,6 +566,11 @@ export default function Settings() {
                             )}
                         </div>
                          <p className="text-xs text-muted-foreground mt-1">解析自 workflows/ 目录</p>
+                         {settings.image_generation_mode === "h3_video_frame" && (
+                             <p className="text-xs text-amber-600 mt-1">
+                                 注意：当前「图片生成方式」为 MiniMax H3 短视频抽帧，此选项不生效，场景图/角色图使用内置 minimax_h3_t2v/ref2v 工作流。
+                             </p>
+                         )}
                     </div>
                      <div className="space-y-2">
                         <label className="block text-sm font-medium mb-2">本地默认视频模型</label>
