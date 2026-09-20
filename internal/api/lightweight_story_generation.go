@@ -120,6 +120,7 @@ type lightweightStoryPromptContext struct {
 	SceneImageHeight           int
 	SceneImageFrameType        string
 	FixedVideoFPS              int
+	ReferenceCharactersJSON    string
 }
 
 func emptyEpisodeMemory() lightweightStoryEpisodeMemory {
@@ -213,6 +214,11 @@ func buildLightweightStoryPromptContext(project models.Project, req models.AutoG
 		return lightweightStoryPromptContext{}, err
 	}
 
+	referenceCharactersJSON, err := buildReferenceCharactersIndexBlock(project.ID)
+	if err != nil {
+		return lightweightStoryPromptContext{}, err
+	}
+
 	return lightweightStoryPromptContext{
 		Project:                    project,
 		Request:                    req,
@@ -224,7 +230,32 @@ func buildLightweightStoryPromptContext(project models.Project, req models.AutoG
 		SceneImageHeight:           sceneImageHeight,
 		SceneImageFrameType:        describeFrameType(sceneImageWidth, sceneImageHeight),
 		FixedVideoFPS:              defaultSegmentFPS,
+		ReferenceCharactersJSON:    referenceCharactersJSON,
 	}, nil
+}
+
+func buildReferenceCharactersIndexBlock(projectID uint) (string, error) {
+	var records []models.Character
+	if err := db.DB.Where("project_id = ? AND ref_image <> ''", projectID).Order("id asc").Find(&records).Error; err != nil {
+		return "", err
+	}
+	if len(records) == 0 {
+		return "", nil
+	}
+	lines := make([]string, 0, len(records))
+	n := 0
+	for _, record := range records {
+		name := strings.TrimSpace(record.Name)
+		if name == "" {
+			continue
+		}
+		n++
+		lines = append(lines, fmt.Sprintf("@图%d=%s", n, name))
+	}
+	if len(lines) == 0 {
+		return "", nil
+	}
+	return "\n\n【参考图角色资产索引】\n" + strings.Join(lines, "\n") + "\n", nil
 }
 
 func buildSceneSegmentationGuidance(plot string, allowCharacterSpeech bool) string {
@@ -743,8 +774,8 @@ func buildLightweightStoryPrompts(project models.Project, req models.AutoGenerat
 	case AutoGenerateModeHighQuality:
 		systemPrompt, userPrompt := buildHighQualityLightweightStoryPrompts(ctx)
 		return systemPrompt, userPrompt, nil
-	case AutoGenerateModeR2V:
-		systemPrompt, userPrompt := buildR2VLightweightStoryPrompts(ctx)
+	case AutoGenerateModeH3Short:
+		systemPrompt, userPrompt := buildH3ShortLightweightStoryPrompts(ctx)
 		return systemPrompt, userPrompt, nil
 	default:
 		systemPrompt, userPrompt := buildStandardLightweightStoryPrompts(ctx)
@@ -1621,7 +1652,7 @@ func validateLightweightStoryResponse(payload *lightweightStoryResponse, existin
 		return fmt.Errorf("scenes array must not be empty")
 	}
 	if minSceneCount > 0 && len(payload.Scenes) < minSceneCount {
-		return fmt.Errorf("scenes count %d is less than required narrative node count %d; R2V mode must cover every narrative node with at least one scene", len(payload.Scenes), minSceneCount)
+		return fmt.Errorf("scenes count %d is less than required narrative node count %d; h3_short mode must cover every narrative node with at least one scene", len(payload.Scenes), minSceneCount)
 	}
 
 	existingByName := make(map[string]lightweightStoryCharacter, len(existingCharacters))
@@ -1992,17 +2023,17 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 
 	narrativeNodesJSON := ""
 	narrativeNodeCount := 0
-	if normalizeAutoGenerateGenerationMode(req.GenerationMode, req.AllowCharacterSpeech) == AutoGenerateModeR2V {
-		task.GlobalTaskManager.UpdateTaskProgress(taskID, 20, "R2V 前置分镜节点清单")
+	if normalizeAutoGenerateGenerationMode(req.GenerationMode, req.AllowCharacterSpeech) == AutoGenerateModeH3Short {
+		task.GlobalTaskManager.UpdateTaskProgress(taskID, 20, "H3 短视频前置分镜节点清单")
 
 		breakdown, breakdownErr := runLightweightStoryBreakdown(project, req, provider, taskID)
 		if breakdownErr != nil {
 			Log(
 				LogLevelError,
-				llmLogMessage("R2V 前置分镜节点清单失败", provider),
+				llmLogMessage("H3 短视频前置分镜节点清单失败", provider),
 				breakdownErr.Error(),
 			)
-			return nil, fmt.Errorf("R2V 前置分镜节点清单失败: %w", breakdownErr)
+			return nil, fmt.Errorf("H3 短视频前置分镜节点清单失败: %w", breakdownErr)
 		}
 		narrativeNodeCount = breakdown.TotalNodes
 		nodesJSON, marshalErr := json.MarshalIndent(breakdown.NarrativeNodes, "", "  ")

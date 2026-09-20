@@ -147,7 +147,7 @@ func runLightweightStoryBreakdown(project models.Project, req models.AutoGenerat
 	Log(
 		LogLevelInfo,
 		llmLogMessage("LLM Request", provider),
-		fmt.Sprintf("Starting R2V narrative breakdown for project=%d episode=%d", project.ID, req.Episode),
+		fmt.Sprintf("Starting H3 short narrative breakdown for project=%d episode=%d", project.ID, req.Episode),
 	)
 
 	raw, err := requestLightweightStoryOnce(provider, systemPrompt, userPrompt, taskID)
@@ -155,14 +155,14 @@ func runLightweightStoryBreakdown(project models.Project, req models.AutoGenerat
 		Log(
 			LogLevelError,
 			llmLogMessage("LLM Error", provider),
-			fmt.Sprintf("R2V narrative breakdown failed: %v", err),
+			fmt.Sprintf("H3 short narrative breakdown failed: %v", err),
 		)
 		return nil, err
 	}
 
 	Log(
 		LogLevelInfo,
-		llmLogMessage("LLM 完整返回(R2V 前置分镜节点清单)", provider),
+		llmLogMessage("LLM 完整返回(H3 短剧前置分镜节点清单)", provider),
 		raw,
 	)
 
@@ -170,7 +170,7 @@ func runLightweightStoryBreakdown(project models.Project, req models.AutoGenerat
 	if err != nil {
 		Log(
 			LogLevelError,
-			llmLogMessage("LLM 返回解析失败(R2V 前置分镜节点清单)", provider),
+			llmLogMessage("LLM 返回解析失败(H3 短剧前置分镜节点清单)", provider),
 			err.Error(),
 		)
 		return nil, err
@@ -178,7 +178,7 @@ func runLightweightStoryBreakdown(project models.Project, req models.AutoGenerat
 
 	Log(
 		LogLevelInfo,
-		llmLogMessage("R2V 前置分镜节点清单确认", provider),
+		llmLogMessage("H3 短剧前置分镜节点清单确认", provider),
 		fmt.Sprintf("total_nodes=%d", payload.TotalNodes),
 	)
 
