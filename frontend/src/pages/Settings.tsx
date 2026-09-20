@@ -379,8 +379,8 @@ export default function Settings() {
                             onChange={e => updateSetting("image_generation_mode", e.target.value)}
                             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         >
-                            <option value="krea_t2i">Krea2 文生图（默认）</option>
-                            <option value="h3_video_frame">MiniMax H3 短视频抽帧（约 0.1 秒）</option>
+                            <option value="krea_t2i">用户设置的图片生成模型（默认）</option>
+                            <option value="h3_video_frame">MiniMax H3 约 0.1 秒视频抽帧</option>
                         </select>
                         <p className="text-xs text-muted-foreground mt-1">
                             用于场景图与角色预览图。抽帧模式使用内置 minimax_h3_t2v 工作流生成约 0.1 秒短视频再抽帧作为图片；尺寸会等比缩放到 H3 上限内并对齐 16。
