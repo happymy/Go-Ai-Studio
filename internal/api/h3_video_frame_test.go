@@ -304,19 +304,23 @@ for _, c := range cases {
 
 func TestCountR2VSegments(t *testing.T) {
 	cases := []struct {
-		total, want int
+		total, segmentDuration, want int
 	}{
-		{8, 2},
-		{3, 1},
-		{5, 1},
-		{10, 2},
-		{7, 2},
-		{0, 1},
-		{-1, 1},
+		{8, 5, 2},
+		{3, 5, 1},
+		{5, 5, 1},
+		{10, 5, 2},
+		{7, 5, 2},
+		{0, 5, 1},
+		{-1, 5, 1},
+		{10, 3, 4},
+		{9, 3, 3},
+		{8, 3, 3},
+		{3, 0, 1},
 	}
 	for _, c := range cases {
-		if got := countR2VSegments(c.total); got != c.want {
-			t.Errorf("countR2VSegments(%d) = %d, want %d", c.total, got, c.want)
+		if got := countR2VSegments(c.total, c.segmentDuration); got != c.want {
+			t.Errorf("countR2VSegments(%d, %d) = %d, want %d", c.total, c.segmentDuration, got, c.want)
 		}
 	}
 }

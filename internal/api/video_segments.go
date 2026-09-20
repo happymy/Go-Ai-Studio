@@ -292,19 +292,20 @@ func buildStoredVideoSegmentPlan(video models.Video, workflowFamily string, lang
 		},
 	}
 
-	// 默认视频模型为 H3（r2v 家族）且目标时长超过阈值时，自动切成 N 段固定 5s，
+	// 默认视频模型为 H3（r2v 家族）且目标时长超过阈值时，自动切成 N 段，
+	// 每段时长取用户设置的阈值（getConfiguredH3AutoSegmentThresholdSeconds），
 	// 由现有 renderVideoSegments 逐段渲染（首尾帧衔接）并 mergeVideoSegments 无缝拼接。
 	if strings.ToLower(strings.TrimSpace(workflowFamily)) == "r2v" {
 		if threshold := getConfiguredH3AutoSegmentThresholdSeconds(); threshold > 0 && total > threshold {
-			segments = make([]VideoSegmentPlanSegment, 0, countR2VSegments(total))
-			for i, n := 0, countR2VSegments(total); i < n; i++ {
+			segments = make([]VideoSegmentPlanSegment, 0, countR2VSegments(total, threshold))
+			for i, n := 0, countR2VSegments(total, threshold); i < n; i++ {
 				segments = append(segments, VideoSegmentPlanSegment{
 					SegmentIndex:               i + 1,
 					PromptPos:                  fullPrompt,
 					PromptNeg:                  promptNeg,
 					PlayerDesc:                 playerDesc,
 					RecommendedFPS:             recommendedFPS,
-					RecommendedDurationSeconds: fixedR2VSegmentDurationSeconds,
+					RecommendedDurationSeconds: threshold,
 				})
 			}
 		}
@@ -318,11 +319,14 @@ func buildStoredVideoSegmentPlan(video models.Video, workflowFamily string, lang
 	}, nil
 }
 
-func countR2VSegments(total int) int {
+func countR2VSegments(total int, segmentDurationSeconds int) int {
 	if total <= 0 {
 		return 1
 	}
-	return (total + fixedR2VSegmentDurationSeconds - 1) / fixedR2VSegmentDurationSeconds
+	if segmentDurationSeconds <= 0 {
+		segmentDurationSeconds = fixedR2VSegmentDurationSeconds
+	}
+	return (total + segmentDurationSeconds - 1) / segmentDurationSeconds
 }
 
 func clampStoredVideoTotalDuration(recommended int) int {
