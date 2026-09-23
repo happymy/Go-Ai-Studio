@@ -16,6 +16,8 @@ import {
   RotateCcw,
   Pencil,
   Trash2,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import type {
   Project,
@@ -502,7 +504,6 @@ const getSceneVideoPromptText = (scene: Scene): string => {
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const lightweightAutoStoryReadonlyView = true;
   // State for tabs with localStorage persistence
   const [activeTab, setActiveTab] = useState<
     "characters" | "scenes" | "videos"
@@ -1297,6 +1298,31 @@ export default function ProjectDetail() {
         onClick: () => {},
       },
     });
+  };
+
+  const handleToggleCharacterLock = (char: Character) => {
+    axios
+      .put(`/api/characters/${char.id}`, {
+        name: char.name,
+        is_locked: !char.is_locked,
+      })
+      .then(() => {
+        fetchCharacters(id!);
+        toast.success(
+          char.is_locked ? "角色已解锁，可编辑" : "角色已锁定（跨集保持设定）",
+        );
+      })
+      .catch((err) => {
+        console.error(err);
+        toast.error(err?.response?.data?.error || "操作失败");
+      });
+  };
+
+  const openCharacterEditor = (char: Character) => {
+    setCurrentChar({ ...char });
+    setCurrentCharPositivePrompt(parseLocalizedPromptText(char.positive_prompt));
+    setCurrentCharNegativePrompt(parseLocalizedPromptText(char.negative_prompt));
+    setIsCharModalOpen(true);
   };
 
   const handleResetCharacter = (char: Character) => {
@@ -2422,13 +2448,13 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {lightweightAutoStoryReadonlyView && (
+      {defaultSettings.lightweight_auto_story_readonly !== false && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm">
           <p className="font-medium text-amber-700 dark:text-amber-400">
-            当前页面已切换为自动剧情只读视图
+            当前页面已切换为自动剧情视图
           </p>
           <p className="mt-1 text-muted-foreground">
-            这里仅展示自动剧情一次性生成的角色、旁白、首帧图提示词和视频提示词；不再支持手动新增、编辑、删除、参考图模式或服装优化。
+            这里展示自动剧情一次性生成的角色、旁白、首帧图提示词和视频提示词；角色支持编辑、锁定/解锁与删除。
           </p>
         </div>
       )}
@@ -2445,7 +2471,7 @@ export default function ProjectDetail() {
                 {activeTab === "characters" && (
                   <>
                     <div className="rounded-md border border-border/60 bg-accent/20 px-3 py-3 text-sm text-muted-foreground">
-                      角色页现在只展示自动剧情生成的人物资产，用于跨集记忆与查看，不再提供手动改写或人物强化入口。
+                      角色页展示自动剧情生成的人物资产，用于跨集记忆与查看；可编辑角色属性，锁定角色后跨集生成保持设定、解锁后可修改。
                     </div>
                     <button
                       onClick={handleBatchGenerateCharacters}
@@ -2651,6 +2677,28 @@ export default function ProjectDetail() {
 
                         <div className="flex justify-end">
                           <button
+                            onClick={() => handleToggleCharacterLock(char)}
+                            className={`p-1.5 hover:bg-accent rounded ${char.is_locked ? "text-amber-500" : "text-muted-foreground"}`}
+                            title={
+                              char.is_locked
+                                ? "解锁角色（解锁后可编辑修改）"
+                                : "锁定角色（跨集保持设定）"
+                            }
+                          >
+                            {char.is_locked ? (
+                              <Lock className="w-4 h-4" />
+                            ) : (
+                              <Unlock className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => openCharacterEditor(char)}
+                            className="p-1.5 hover:bg-accent rounded text-muted-foreground"
+                            title="编辑角色"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleGenerateImageOnly(char)}
                             className="p-1.5 hover:bg-accent rounded text-blue-500"
                             title="生成角色预览图"
@@ -2663,6 +2711,13 @@ export default function ProjectDetail() {
                             title="重置角色状态"
                           >
                             <RotateCcw className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCharacter(char.id!)}
+                            className="p-1.5 hover:bg-accent rounded text-destructive"
+                            title="删除角色"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
 

@@ -4,6 +4,7 @@ import type { Workflow } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/ui/combobox";
+import { Switch } from "@/components/ui/switch";
 import { Save, CheckCircle2, XCircle, ExternalLink, FolderSearch } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -44,6 +45,7 @@ export default function Settings() {
         character_image_height: "1344",
         character_image_width: "768",
         optimize_clothing: false,
+        lightweight_auto_story_readonly: true,
         video_height: "640",
         video_width: "640",
         video_generation_provider: "local",
@@ -206,6 +208,24 @@ export default function Settings() {
                             自动剧情请求 LLM 时的最长等待时间。适合长文本、慢模型或拥堵时增大。
                         </p>
                     </div>
+                </div>
+            </div>
+
+            {/* 自动剧情设置 */}
+            <div className="bg-card p-6 rounded-lg border border-border shadow-sm">
+                <h2 className="text-xl font-semibold mb-4 text-primary">自动剧情</h2>
+                <div className="flex items-center justify-between gap-6">
+                    <div>
+                        <label className="block text-sm font-medium mb-1">自动剧情只读模式</label>
+                        <p className="text-xs text-muted-foreground">
+                            开启后项目页的自动剧情内容（角色、场景、视频）仅为展示与重置用途，不提供编辑入口；
+                            关闭后恢复手动新增、编辑、删除与参考图/服装优化等能力。
+                        </p>
+                    </div>
+                    <Switch
+                        checked={settings.lightweight_auto_story_readonly}
+                        onCheckedChange={(v: boolean) => updateSetting("lightweight_auto_story_readonly", v)}
+                    />
                 </div>
             </div>
 

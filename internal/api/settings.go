@@ -19,6 +19,7 @@ const (
 	KeyCharacterImageHeight          = "character_image_height"
 	KeyCharacterImageWidth           = "character_image_width"
 	KeyOptimizeClothing              = "optimize_clothing"
+	KeyLightweightStoryReadonly      = "lightweight_auto_story_readonly"
 	KeyVideoHeight                   = "video_height"
 	KeyVideoWidth                    = "video_width"
 	KeyVideoGenerationProvider       = "video_generation_provider"
@@ -85,6 +86,7 @@ func InitDefaultSettings() {
 		KeyCharacterImageHeight:          "1344",
 		KeyCharacterImageWidth:           "768",
 		KeyOptimizeClothing:              "false",
+		KeyLightweightStoryReadonly:      "true",
 		KeyVideoHeight:                   "640",
 		KeyVideoWidth:                    "640",
 		KeyVideoGenerationProvider:       VideoGenerationProviderLocal,
@@ -156,6 +158,8 @@ func getDescription(key string) string {
 		return "默认角色预览图片生成宽度"
 	case KeyOptimizeClothing:
 		return "是否启用服装优化"
+	case KeyLightweightStoryReadonly:
+		return "自动剧情只读模式（开启后角色/镜头/视频仅展示与重置，关闭后允许编辑）"
 	case KeyVideoHeight:
 		return "默认视频生成高度"
 	case KeyVideoWidth:
@@ -651,7 +655,7 @@ func GetSettings(c *gin.Context) {
 			continue
 		}
 		// Convert boolean strings to actual booleans for JSON
-		if s.Key == KeyOptimizeClothing {
+		if s.Key == KeyOptimizeClothing || s.Key == KeyLightweightStoryReadonly {
 			val, _ := strconv.ParseBool(s.Value)
 			settingsMap[s.Key] = val
 		} else if s.Key == KeyJimengAspectRatio {
