@@ -564,14 +564,24 @@ func triggerCharacterImageGeneration(char models.Character) (string, error) {
 	// For simplicity in this architecture, we will spawn a goroutine to poll ComfyUI history.
 	// In a robust system, this should be a separate Task type or a long-running task.
 	go func(pid string, charID uint, projectCode string) {
-		// Poll for completion (timeout 10 minutes)
+		// Poll for completion (timeout 10 minutes, reset while still queued in ComfyUI)
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
-		timeout := time.After(10 * time.Minute)
+		const baseTimeout = 10 * time.Minute
+		const maxTotalWait = 60 * time.Minute
+		started := time.Now()
+		timeout := time.NewTimer(baseTimeout)
+		defer timeout.Stop()
 
 		for {
 			select {
-			case <-timeout:
+			case <-timeout.C:
+				// 批量提交时任务可能仍在 ComfyUI 队列中排队/执行，
+				// 只要还在队列就重置超时继续等待，避免批量排队被误判为失败。
+				if active, qErr := IsComfyPromptActive(pid); qErr == nil && active && time.Since(started) < maxTotalWait {
+					timeout.Reset(baseTimeout)
+					continue
+				}
 				Log(LogLevelError, "Image Generation Timeout", fmt.Sprintf("Prompt ID: %s", pid))
 				var c models.Character
 				if err := db.DB.First(&c, charID).Error; err == nil {

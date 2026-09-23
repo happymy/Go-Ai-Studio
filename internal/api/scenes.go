@@ -1114,11 +1114,21 @@ func triggerSceneImageGeneration(scene models.Scene) (string, error) {
 func waitForSceneImageOutput(promptID string, sceneID uint, projectCode string) (string, error) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	timeout := time.After(20 * time.Minute)
+	const baseTimeout = 20 * time.Minute
+	const maxTotalWait = 60 * time.Minute
+	started := time.Now()
+	timeout := time.NewTimer(baseTimeout)
+	defer timeout.Stop()
 
 	for {
 		select {
-		case <-timeout:
+		case <-timeout.C:
+			// 任务可能仍在 ComfyUI 队列中排队/执行（批量提交时常见），
+			// 只要还在队列就重置超时继续等待，避免批量排队被误判为失败。
+			if active, qErr := IsComfyPromptActive(promptID); qErr == nil && active && time.Since(started) < maxTotalWait {
+				timeout.Reset(baseTimeout)
+				continue
+			}
 			return "", fmt.Errorf("image generation timed out")
 		case <-ticker.C:
 			history, err := GetComfyHistory(promptID)
