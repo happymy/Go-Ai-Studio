@@ -75,6 +75,21 @@ func AddCharacter(c *gin.Context) {
 	char.Country = strings.TrimSpace(char.Country)
 	char.Appearance = strings.TrimSpace(char.Appearance)
 	char.Description = strings.TrimSpace(char.Description)
+	if char.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Character name is required"})
+		return
+	}
+	var conflict int64
+	if err := db.DB.Model(&models.Character{}).
+		Where("project_id = ? AND name = ?", char.ProjectID, char.Name).
+		Count(&conflict).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check character name"})
+		return
+	}
+	if conflict > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("项目内已存在同名角色: %s", char.Name)})
+		return
+	}
 	char.Width = 0
 	char.Height = 0
 	char.Seed = 0
@@ -108,6 +123,21 @@ func UpdateCharacter(c *gin.Context) {
 
 	// Update fields
 	char.Name = strings.TrimSpace(updateData.Name)
+	if char.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Character name is required"})
+		return
+	}
+	var conflict int64
+	if err := db.DB.Model(&models.Character{}).
+		Where("project_id = ? AND name = ? AND id <> ?", char.ProjectID, char.Name, char.ID).
+		Count(&conflict).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check character name"})
+		return
+	}
+	if conflict > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("项目内已存在同名角色: %s", char.Name)})
+		return
+	}
 	char.Gender = strings.TrimSpace(updateData.Gender)
 	char.Age = strings.TrimSpace(updateData.Age)
 	char.BodyHeight = strings.TrimSpace(updateData.BodyHeight)

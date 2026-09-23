@@ -439,7 +439,8 @@ func loadExistingStoryCharacters(projectID uint) ([]models.Character, []lightwei
 			continue
 		}
 		if _, exists := seen[normalized.Name]; exists {
-			return nil, nil, fmt.Errorf("duplicate existing character name: %s", normalized.Name)
+			Log(LogLevelWarn, "发现重名角色", fmt.Sprintf("project=%d name=%s 保留首条、跳过重复记录 id=%d", projectID, normalized.Name, record.ID))
+			continue
 		}
 		seen[normalized.Name] = struct{}{}
 		output = append(output, normalized)
@@ -1670,19 +1671,22 @@ func validateLightweightStoryResponse(payload *lightweightStoryResponse, existin
 	}
 
 	outputNames := make(map[string]lightweightStoryCharacter, len(payload.Characters))
+	newCharacters := payload.Characters[:0]
 	for _, char := range payload.Characters {
 		if char.Name == "" {
 			return fmt.Errorf("character name is required")
 		}
+		if _, exists := existingByName[char.Name]; exists {
+			Log(LogLevelWarn, "模型重复返回既有角色，按同名跳过", fmt.Sprintf("name=%s 视为既有锁定角色，不再重复入库", char.Name))
+			continue
+		}
 		if _, exists := outputNames[char.Name]; exists {
 			return fmt.Errorf("duplicate character name: %s", char.Name)
 		}
-		if _, exists := existingByName[char.Name]; exists {
-			return fmt.Errorf("existing character %s must not be returned in characters; only return newly appeared characters", char.Name)
-		}
-
 		outputNames[char.Name] = char
+		newCharacters = append(newCharacters, char)
 	}
+	payload.Characters = newCharacters
 
 	sceneIDs := make(map[int]struct{}, len(payload.Scenes))
 	expectedSceneID := 1

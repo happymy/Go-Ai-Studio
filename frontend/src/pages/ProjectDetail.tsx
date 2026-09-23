@@ -1255,6 +1255,7 @@ export default function ProjectDetail() {
     const payload = {
       ...characterPayload,
       project_id: Number(id),
+      is_locked: currentChar.is_locked ?? false,
       positive_prompt: stringifyLocalizedPromptText(currentCharPositivePrompt),
       negative_prompt: stringifyLocalizedPromptText(currentCharNegativePrompt),
       optimize_clothing:
@@ -1273,7 +1274,7 @@ export default function ProjectDetail() {
       })
       .catch((err) => {
         console.error(err);
-        toast.error("保存角色失败");
+        toast.error(err?.response?.data?.error || "保存角色失败");
       });
   };
 
@@ -3493,6 +3494,21 @@ export default function ProjectDetail() {
                 老年或晚年阶段不启用服装优化。
               </p>
             )}
+
+            <div className="flex items-center justify-between p-3 border rounded-md">
+              <div>
+                <label className="text-sm font-medium">锁定角色</label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  锁定作为跨集人物锚点，续写时不参与外观修改；解锁后可编辑并重新锁定。
+                </p>
+              </div>
+              <Switch
+                checked={!!currentChar.is_locked}
+                onCheckedChange={(v) =>
+                  setCurrentChar({ ...currentChar, is_locked: v })
+                }
+              />
+            </div>
 
             <div className="border-t pt-4 mt-2">
               <div className="flex items-center justify-between mb-4">
