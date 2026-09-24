@@ -189,7 +189,15 @@ func buildH3ShortLightweightStoryPrompts(ctx lightweightStoryPromptContext) (str
       "duration_seconds": 5,
       "narration": "一句给编辑和人工浏览的简短镜头说明，不参与后续生成。",
       "image_prompt": "",
-      "video_prompt": ""
+      "video_prompt": "",
+      "objective": "本场主角要什么（一句话）",
+      "turn": "本场结束时状态、情绪或关系的变化（一句话）",
+      "location": "本场地点资产（一句话）",
+      "shot_size": "中景",
+      "camera_angle": "平视",
+      "camera_movement": "固定",
+      "blocking": "本场人物站位与调度（一句话）",
+      "ending_state": "本场结束时的人物位置/持物/服装/情绪快照，是下一场起点（一句话）"
     }
   ],
   "episode_memory": {

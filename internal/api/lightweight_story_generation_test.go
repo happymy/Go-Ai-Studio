@@ -90,3 +90,42 @@ func TestNormalizeStoryCharacterRecordRoundTrip(t *testing.T) {
 		t.Errorf("legacy record should fall back to nil fields, got %+v", plain)
 	}
 }
+
+// 第一梯队：续写 prompt 必须把上一段最后一场的 ending_state 作为续写起点注入，
+// 实现跨场状态延续（承接位置/持物/服装/情绪，禁止凭空重置）。
+func TestBuildLightweightStoryContinuationUserPromptCarriesEndingState(t *testing.T) {
+	base := "base user prompt"
+	baseScenes := []lightweightStoryScene{
+		{SceneID: 1, DurationSeconds: 5, ImagePrompt: "img1", VideoPrompt: "vid1",
+			EndingState: "沈西风握剑立于桌前，油灯将熄"},
+	}
+	partial := &lightweightStoryPartialContext{
+		TotalScenes: 3,
+		Scenes:      baseScenes,
+		NextSceneID: 2,
+	}
+	prompt, err := buildLightweightStoryContinuationUserPrompt(base, partial)
+	if err != nil {
+		t.Fatalf("build continuation prompt failed: %v", err)
+	}
+	if !strings.Contains(prompt, "状态快照") || !strings.Contains(prompt, "沈西风握剑立于桌前") {
+		t.Errorf("continuation prompt should carry last scene ending_state, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "禁止跳跃或凭空重置") {
+		t.Errorf("continuation prompt should require natural continuation, got: %s", prompt)
+	}
+
+	// 上一段末场没有 ending_state → 不注入该指令，prompt 仍可生成
+	partialNoState := &lightweightStoryPartialContext{
+		TotalScenes: 2,
+		Scenes:      []lightweightStoryScene{{SceneID: 1, DurationSeconds: 5, ImagePrompt: "img1", VideoPrompt: "vid1"}},
+		NextSceneID: 2,
+	}
+	promptNoState, err := buildLightweightStoryContinuationUserPrompt(base, partialNoState)
+	if err != nil {
+		t.Fatalf("build continuation prompt (no ending_state) failed: %v", err)
+	}
+	if strings.Contains(promptNoState, "状态快照") {
+		t.Errorf("continuation prompt should not inject ending_state instruction when absent, got: %s", promptNoState)
+	}
+}

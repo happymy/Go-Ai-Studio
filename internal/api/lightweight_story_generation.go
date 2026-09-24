@@ -120,6 +120,12 @@ type lightweightStoryScene struct {
 	Location      string `json:"location,omitempty"`
 	// P3 出场角色（可选，仅用于幽灵角色检查；omitempty 保持旧输出向后兼容）
 	Characters []string `json:"characters,omitempty"`
+	// 第一梯队（调研 R2/ScriptAgent：镜头语言卡 + 跨场状态延续，可选增强）
+	ShotSize       string `json:"shot_size,omitempty"`       // 景别：远景/全景/中景/近景/特写
+	CameraAngle    string `json:"camera_angle,omitempty"`    // 机位：平视/仰视/俯视/侧拍/过肩等
+	CameraMovement string `json:"camera_movement,omitempty"` // 运镜：固定/推/拉/摇/移/跟随等
+	Blocking       string `json:"blocking,omitempty"`        // 人物调度/站位（一句）
+	EndingState    string `json:"ending_state,omitempty"`    // 本场结束时状态快照（人物位置/持物/服装/情绪），下一场生成的起点
 }
 
 func (s *lightweightStoryScene) UnmarshalJSON(data []byte) error {
@@ -136,6 +142,11 @@ func (s *lightweightStoryScene) UnmarshalJSON(data []byte) error {
 		MoodArc         json.RawMessage `json:"mood_arc"`
 		Location        json.RawMessage `json:"location"`
 		Characters      json.RawMessage `json:"characters"`
+		ShotSize        json.RawMessage `json:"shot_size"`
+		CameraAngle     json.RawMessage `json:"camera_angle"`
+		CameraMovement  json.RawMessage `json:"camera_movement"`
+		Blocking        json.RawMessage `json:"blocking"`
+		EndingState     json.RawMessage `json:"ending_state"`
 	}
 	var raw rawScene
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -178,6 +189,21 @@ func (s *lightweightStoryScene) UnmarshalJSON(data []byte) error {
 		if s.Characters, err = coerceJSONStringSlice(raw.Characters); err != nil {
 			return fmt.Errorf("characters: %w", err)
 		}
+	}
+	if s.ShotSize, err = coerceJSONScalarToString(raw.ShotSize); err != nil {
+		return fmt.Errorf("shot_size: %w", err)
+	}
+	if s.CameraAngle, err = coerceJSONScalarToString(raw.CameraAngle); err != nil {
+		return fmt.Errorf("camera_angle: %w", err)
+	}
+	if s.CameraMovement, err = coerceJSONScalarToString(raw.CameraMovement); err != nil {
+		return fmt.Errorf("camera_movement: %w", err)
+	}
+	if s.Blocking, err = coerceJSONScalarToString(raw.Blocking); err != nil {
+		return fmt.Errorf("blocking: %w", err)
+	}
+	if s.EndingState, err = coerceJSONScalarToString(raw.EndingState); err != nil {
+		return fmt.Errorf("ending_state: %w", err)
 	}
 	return nil
 }
@@ -1393,6 +1419,11 @@ func buildLightweightStoryContinuationUserPrompt(baseUserPrompt string, partial 
 			fmt.Sprintf("你上一次已经成功生成并确认保留了 scene_id 1-%d 的内容。不要重复或改写这些已完成的 scenes。", partial.NextSceneID-1),
 			fmt.Sprintf("本次只需要从 scene_id %d 开始继续补全剩余 scenes。", partial.NextSceneID),
 		)
+		if last := partial.Scenes[len(partial.Scenes)-1]; strings.TrimSpace(last.EndingState) != "" {
+			instructions = append(instructions,
+				fmt.Sprintf("上一段最后一场(scene_id=%d)结束时的人物/道具/场景状态快照：%s。续写的第一个场景必须从该状态自然接续（承接位置、持物、服装、情绪与场景状态），禁止跳跃或凭空重置。", last.SceneID, strings.TrimSpace(last.EndingState)),
+			)
+		}
 	} else {
 		instructions = append(instructions, "上一次角色定义已经开始生成，但 scenes 尚未完整产出。本次从 scene_id 1 开始继续补全。")
 	}
@@ -1843,6 +1874,31 @@ func validateLightweightStoryResponse(payload *lightweightStoryResponse, existin
 					LogLevelWarn,
 					"h3_short 场景戏剧卡缺失(软告警)",
 					fmt.Sprintf("scene %d 缺少 %v；该场景将缺少明确的目标/转折/地点资产", scene.SceneID, missing),
+				)
+			}
+
+			// 第一梯队：h3_short 镜头语言卡 + 状态衔接 缺失软告警，不硬失败。
+			var cinematicMissing []string
+			if strings.TrimSpace(scene.ShotSize) == "" {
+				cinematicMissing = append(cinematicMissing, "shot_size")
+			}
+			if strings.TrimSpace(scene.CameraAngle) == "" {
+				cinematicMissing = append(cinematicMissing, "camera_angle")
+			}
+			if strings.TrimSpace(scene.CameraMovement) == "" {
+				cinematicMissing = append(cinematicMissing, "camera_movement")
+			}
+			if strings.TrimSpace(scene.Blocking) == "" {
+				cinematicMissing = append(cinematicMissing, "blocking")
+			}
+			if strings.TrimSpace(scene.EndingState) == "" {
+				cinematicMissing = append(cinematicMissing, "ending_state")
+			}
+			if len(cinematicMissing) > 0 {
+				Log(
+					LogLevelWarn,
+					"h3_short 镜头语言卡缺失(软告警)",
+					fmt.Sprintf("scene %d 缺少 %v；该场景将缺少明确的景别/机位/运镜/调度/状态衔接", scene.SceneID, cinematicMissing),
 				)
 			}
 		}
