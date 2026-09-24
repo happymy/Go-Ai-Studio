@@ -250,3 +250,37 @@ AutoGenerateRequest.Plot（剧本/分镜文本）
 - ❌ 前端改动（报告先走任务日志/结果字段）
 - ❌ 改已锁定角色指纹的入库语义（characters.go）
 - ❌ 豆瓣/外部数据库、模型训练、微调
+
+---
+
+## 8. 改动生效模式对照表（2026-09-24 补记）
+
+> 一键剧集四模式：`narration`（解说）/ `high_quality`（高质量）/ `storyboard`（分镜）/ `h3_short`（H3 短剧，含别名 `r2v`）。
+> 所有改动均经统一入口 `runLightweightStoryGeneration`（`lightweight_story_generation.go:2186`）按模式分派。
+
+### 8.1 四种模式全部生效（公共链路）
+
+| 改动 | 代码依据 |
+|---|---|
+| **P3 评分**（结构/格式/内容 40/30/30 + 台词缺失/幽灵角色/旁白占比） | `buildLightweightStoryQualityReport` 在 `runLightweightStoryGeneration` 末尾无条件执行（L2339） |
+| **P4 修复重试**（maxAttempts=3，校验失败带原文语境 R2 HAR 重试） | `runLightweightStoryGenerationWithRetry` 包裹所有模式（L2279） |
+| **角色归并**（规范化同名移除 + 集内合并） | L2322 无条件执行 |
+| **角色资产规则**（`buildCharacterAssetRules`） | L928 在模式 switch 之后统一追加 |
+| **场景写作卡公共部分**（objective/conflict/turn/scene_function/mood_arc/location/characters + 镜头语言五字段：shot_size/camera_angle/camera_movement/blocking/ending_state + 状态衔接） | `buildSceneWritingCard` 对全部模式追加（L928、`scene_writing_card.go:29-32`） |
+| **P0 小说转剧本**（`/api/novel-to-script`） | 独立接口，是"剧本来源"上游，产出喂给四模式之一出镜头/视频 |
+
+### 8.2 仅 h3_short（含 r2v）生效
+
+| 改动 | 代码依据 |
+|---|---|
+| **H3 专属 prompt 52 条硬约束**（三段式、台词进主段、`<Picture N>`、禁 ASCII 引号等） | `buildH3ShortLightweightStoryPrompts` 仅 h3_short 分派（L922-924） |
+| **H3 前置分镜节点清单**（breakdown 叙事节点） | 仅 h3_short 执行（L2234） |
+| **写作卡 strict 八字段强制**（objective/turn/location/shot_size/camera_angle/camera_movement/blocking/ending_state 必填） | `h3Strict=true` 仅 h3_short（L924、L28-30） |
+| **objective/turn/location 软告警校验** | `isH3Short` 分支（L1839-1869） |
+| **H3 参考图槽位**（9 图上限、`@图N`→`<Picture N+1>`） | `h3_video_frame.go` |
+| **首尾帧接力**（下一镜首帧作本镜尾帧） | `video_segments.go` |
+| **第二梯队出场角色可见性检查**（`checkCastPresenceInSceneBody`） | 属 P3 质量报告，重点服务 h3_short 分镜连续性 |
+
+### 8.3 结论
+
+> **质量闭环（评分/修复/归并/写作卡/角色资产）四种模式全吃；H3 适配（52 条硬约束、breakdown、strict 字段、参考图、首尾帧）只对 h3_short 模式生效。** `narration` 模式相对最"原生态"——只有公共链路，无任何 H3 专项约束。
