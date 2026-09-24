@@ -447,6 +447,7 @@ export default function LLMEngine() {
                                 request_max_tokens: 0,
                                 request_temperature: 0,
                                 compat_lm_studio: false,
+                                enable_thinking: true,
                             });
                             setRequestMaxTokensInput("");
                             setRequestTemperatureInput("");
@@ -737,6 +738,27 @@ export default function LLMEngine() {
                                             LM Studio 加载模型时配置的 context length。生成前会估算输入占用，接近上限时预警。留空默认 40960。
                                         </p>
                                     </div>
+                                </div>
+
+                                <div className="mt-4 flex items-start justify-between gap-4 border-t border-border/60 pt-4">
+                                    <div>
+                                        <div className="text-sm font-medium">开启思考 (think)</div>
+                                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                            默认开启，与现状一致。关闭后请求将注入 <code className="rounded bg-muted px-1">think: false</code>，
+                                            适用于支持该参数的服务(如 Ollama / 新版 LM Studio)。注意：当前 LM Studio
+                                            0.4.x 实测会忽略 think 参数，思考行为由服务端/模型模板控制。
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        checked={!!currentProvider.enable_thinking}
+                                        disabled={!currentProvider.compat_lm_studio}
+                                        onCheckedChange={(checked) =>
+                                            setCurrentProvider({
+                                                ...currentProvider,
+                                                enable_thinking: checked,
+                                            })
+                                        }
+                                    />
                                 </div>
                             </div>
 

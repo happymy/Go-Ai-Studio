@@ -83,6 +83,7 @@ func UpdateLLMProvider(c *gin.Context) {
 	provider.CompatLMStudio = updateData.CompatLMStudio
 	provider.LMStudioMaxTokens = updateData.LMStudioMaxTokens
 	provider.LMStudioContextWindow = updateData.LMStudioContextWindow
+	provider.EnableThinking = updateData.EnableThinking
 	provider.UpdatedAt = time.Now()
 
 	if err := db.DB.Save(&provider).Error; err != nil {

@@ -20,6 +20,7 @@ type LLMProvider struct {
 	CompatLMStudio              bool                   `json:"compat_lm_studio" gorm:"default:false"`
 	LMStudioMaxTokens           int                    `json:"lm_studio_max_tokens" gorm:"default:8192"`
 	LMStudioContextWindow       int                    `json:"lm_studio_context_window" gorm:"default:40960"`
+	EnableThinking              bool                   `json:"enable_thinking" gorm:"default:true"`
 	IsActive                    bool                   `json:"is_active" gorm:"default:false"`
 	UsageStats                  *LLMProviderUsageStats `json:"usage_stats,omitempty" gorm:"-"`
 	CreatedAt                   time.Time              `json:"created_at"`

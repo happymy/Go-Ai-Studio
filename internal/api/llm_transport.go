@@ -49,12 +49,56 @@ func buildLLMStreamingHTTPClient() *http.Client {
 func buildLLMOpenAIClient(provider models.LLMProvider, timeout time.Duration, streaming bool) *openai.Client {
 	config := openai.DefaultConfig(provider.APIKey)
 	config.BaseURL = provider.APIAddress
-	if streaming {
-		config.HTTPClient = buildLLMStreamingHTTPClient()
-	} else {
-		config.HTTPClient = buildLLMHTTPClient(timeout)
+	httpClient := buildLLMStreamingHTTPClient()
+	if !streaming {
+		httpClient = buildLLMHTTPClient(timeout)
 	}
+	// 兼容 LM Studio 且用户关闭思考时，在出站请求体注入 think 参数（本地推理服务通用思考开关，
+	// 如 Ollama / LM Studio 的 Qwen3 系模型）。仅对 CompatLMStudio 注入，避免 OpenAI 官方端点
+	// 因未知参数返回 400。
+	if provider.CompatLMStudio && !provider.EnableThinking {
+		base := httpClient.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		httpClient.Transport = &thinkInjectionRoundTripper{base: base, think: false}
+	}
+	config.HTTPClient = httpClient
 	return openai.NewClientWithConfig(config)
+}
+
+// thinkInjectionRoundTripper 在请求出站前给 /chat/completions 请求体注入 think 参数。
+type thinkInjectionRoundTripper struct {
+	base  http.RoundTripper
+	think bool
+}
+
+func (t *thinkInjectionRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body == nil || !strings.Contains(req.URL.Path, "/chat/completions") {
+		return t.base.RoundTrip(req)
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := req.Body.Close(); err != nil {
+		return nil, err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		// 非 JSON 请求体原样透传
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		return t.base.RoundTrip(req)
+	}
+	payload["think"] = t.think
+	newBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(newBody))
+	req.ContentLength = int64(len(newBody))
+	req.Header.Set("Content-Type", "application/json")
+	return t.base.RoundTrip(req)
 }
 
 type llmStreamIdleController struct {
@@ -348,6 +392,17 @@ func newDirectLLMRequest(ctx context.Context, provider models.LLMProvider, req o
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
+	}
+
+	// 兼容 LM Studio 且用户关闭思考时，注入 think 参数（本地推理服务通用思考开关）
+	if provider.CompatLMStudio && !provider.EnableThinking {
+		var m map[string]any
+		if uerr := json.Unmarshal(payload, &m); uerr == nil {
+			m["think"] = false
+			if payload, err = json.Marshal(m); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSpace(provider.APIAddress), bytes.NewReader(payload))
