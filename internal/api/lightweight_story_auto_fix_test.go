@@ -63,13 +63,19 @@ const p4MissingImagePromptPayload = `{
 }`
 
 func TestRunLightweightStoryGenerationWithRetryFixesAndSucceeds(t *testing.T) {
+	plot := "沈西风推开客栈大门，环顾四周。王五在柜台后拨着算盘。"
 	responses := []string{p4MissingImagePromptPayload, p4ValidPayload}
 	requestCount := 0
 	requestOnce := func(system string, user string) (string, error) {
 		requestCount++
-		// 第二次请求的 userPrompt 必须携带修复指令
-		if requestCount == 2 && !strings.Contains(user, "未通过校验") {
-			t.Errorf("retry userPrompt should carry fix instruction")
+		// 第二次请求的 userPrompt 必须携带修复指令，且附带相关原文语境（第三梯队）
+		if requestCount == 2 {
+			if !strings.Contains(user, "未通过校验") {
+				t.Errorf("retry userPrompt should carry fix instruction")
+			}
+			if !strings.Contains(user, "相关原文语境") || !strings.Contains(user, "沈西风推开客栈大门") {
+				t.Errorf("retry userPrompt should carry retrieved context segments")
+			}
 		}
 		if requestCount-1 >= len(responses) {
 			return "", errors.New("unexpected extra request")
@@ -85,7 +91,7 @@ func TestRunLightweightStoryGenerationWithRetryFixesAndSucceeds(t *testing.T) {
 		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
 	}
 
-	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 3)
+	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, plot, requestOnce, parseOnce, validate, nil, 3)
 	if err != nil {
 		t.Fatalf("expected success after fix, got %v", err)
 	}
@@ -101,6 +107,7 @@ func TestRunLightweightStoryGenerationWithRetryFixesAndSucceeds(t *testing.T) {
 }
 
 func TestRunLightweightStoryGenerationWithRetryExhausts(t *testing.T) {
+	plot := ""
 	requestCount := 0
 	requestOnce := func(system string, user string) (string, error) {
 		requestCount++
@@ -112,7 +119,7 @@ func TestRunLightweightStoryGenerationWithRetryExhausts(t *testing.T) {
 	validate := func(p *lightweightStoryResponse) error {
 		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
 	}
-	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 2)
+	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, plot, requestOnce, parseOnce, validate, nil, 2)
 	if err == nil {
 		t.Fatal("expected error after retries exhausted")
 	}
@@ -125,6 +132,7 @@ func TestRunLightweightStoryGenerationWithRetryExhausts(t *testing.T) {
 }
 
 func TestRunLightweightStoryGenerationWithRetryParseFailureNoRetry(t *testing.T) {
+	plot := ""
 	requestCount := 0
 	requestOnce := func(system string, user string) (string, error) {
 		requestCount++
@@ -136,7 +144,7 @@ func TestRunLightweightStoryGenerationWithRetryParseFailureNoRetry(t *testing.T)
 	validate := func(p *lightweightStoryResponse) error {
 		return nil
 	}
-	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 3)
+	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, plot, requestOnce, parseOnce, validate, nil, 3)
 	if err == nil {
 		t.Fatal("expected parse error to fail immediately")
 	}
@@ -146,6 +154,7 @@ func TestRunLightweightStoryGenerationWithRetryParseFailureNoRetry(t *testing.T)
 }
 
 func TestRunLightweightStoryGenerationWithRetryMaxAttemptsOne(t *testing.T) {
+	plot := ""
 	requestCount := 0
 	requestOnce := func(system string, user string) (string, error) {
 		requestCount++
@@ -157,7 +166,7 @@ func TestRunLightweightStoryGenerationWithRetryMaxAttemptsOne(t *testing.T) {
 	validate := func(p *lightweightStoryResponse) error {
 		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
 	}
-	if _, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 1); err == nil {
+	if _, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, plot, requestOnce, parseOnce, validate, nil, 1); err == nil {
 		t.Fatal("expected error with maxAttempts=1")
 	}
 	if requestCount != 1 {
@@ -180,6 +189,7 @@ func TestRunLightweightStoryGenerationWithRetryDialogueLossTriggersRetry(t *test
 		"episode_memory": {"story_summary": "s"}
 	}`
 	responses := []string{missingDialogue, validWithDialogue}
+	plot := "郊外凉亭，王五看着远方说：“李三在哪？”沈西风摇头。"
 	requestCount := 0
 	requestOnce := func(system string, user string) (string, error) {
 		requestCount++
@@ -197,7 +207,7 @@ func TestRunLightweightStoryGenerationWithRetryDialogueLossTriggersRetry(t *test
 	postQuality := func(p *lightweightStoryResponse) []string {
 		return checkDialogueCoverage("王五说：“李三在哪？”", p.Scenes)
 	}
-	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, postQuality, 3)
+	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, plot, requestOnce, parseOnce, validate, postQuality, 3)
 	if err != nil {
 		t.Fatalf("expected success after dialogue-loss retry, got %v", err)
 	}
@@ -219,6 +229,7 @@ func TestRunLightweightStoryGenerationWithRetryQualityIssueExhaustedStillSucceed
 		"episode_memory": {"story_summary": "s"}
 	}`
 	responses := []string{missingDialogue, missingDialogue, missingDialogue}
+	plot := ""
 	requestCount := 0
 	requestOnce := func(system string, user string) (string, error) {
 		requestCount++
@@ -233,7 +244,7 @@ func TestRunLightweightStoryGenerationWithRetryQualityIssueExhaustedStillSucceed
 	postQuality := func(p *lightweightStoryResponse) []string {
 		return checkDialogueCoverage("王五说：“李三在哪？”", p.Scenes)
 	}
-	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, postQuality, 3)
+	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, plot, requestOnce, parseOnce, validate, postQuality, 3)
 	if err != nil {
 		t.Fatalf("expected success even when quality issue persists at last attempt, got %v", err)
 	}
@@ -242,5 +253,64 @@ func TestRunLightweightStoryGenerationWithRetryQualityIssueExhaustedStillSucceed
 	}
 	if len(payload.Scenes) != 1 {
 		t.Errorf("expected payload returned, got %+v", payload.Scenes)
+	}
+}
+
+// 第三梯队：buildStoryFixContext 从原文检索与修正最相关的句子片段。
+func TestBuildStoryFixContext(t *testing.T) {
+	plot := "黄昏，沈西风策马入城，直奔李府。李府门前守卫森严，沈西风勒马停在石狮旁。另一处，赵员外正在账房来回踱步，盘算着今年的粮价。王五坐在酒馆角落，低声说着什么。"
+	payload := &lightweightStoryResponse{
+		Characters: []lightweightStoryCharacter{{Name: "沈西风"}},
+		Scenes: []lightweightStoryScene{
+			{SceneID: 1, Characters: []string{"沈西风", "王五"}},
+		},
+	}
+	ctx := buildStoryFixContext(plot, payload, 1000)
+	if !strings.Contains(ctx, "沈西风策马入城") || !strings.Contains(ctx, "王五坐在酒馆角落") {
+		t.Fatalf("expected segments mentioning 沈西风/王五 in context, got: %s", ctx)
+	}
+	// 无关人物赵员外的段落不应被选中（上下文只检索相关句）
+	if strings.Contains(ctx, "赵员外") {
+		t.Errorf("unrelated 赵员外 segment should not be retrieved, got: %s", ctx)
+	}
+	// 保持原文顺序：沈西风段落应在王五段落之前
+	if strings.Index(ctx, "沈西风策马入城") > strings.Index(ctx, "王五坐在酒馆角落") {
+		t.Errorf("retrieved context should keep original plot order, got: %s", ctx)
+	}
+
+	// 空 plot / 无关键词 / nil payload → 空串
+	if got := buildStoryFixContext("", payload, 1000); got != "" {
+		t.Errorf("empty plot should return empty, got %q", got)
+	}
+	if got := buildStoryFixContext(plot, &lightweightStoryResponse{Scenes: []lightweightStoryScene{{SceneID: 1}}}, 1000); got != "" {
+		t.Errorf("no keywords should return empty, got %q", got)
+	}
+	if got := buildStoryFixContext(plot, nil, 1000); got != "" {
+		t.Errorf("nil payload should return empty, got %q", got)
+	}
+
+	// 单句超限：跳过而非截断
+	longSentence := "这是一个非常漫长的句子，讲的是沈西风从城门一路追到东郊的官道尽头又折返到西市再穿过三条巷子回到李府后院门口整整耗费了半日时光才终于追上那批货" + strings.Repeat("很长", 200)
+	longPlot := longSentence + "。"
+	ctxLong := buildStoryFixContext(longPlot, payload, 100)
+	if ctxLong != "" && strings.Contains(ctxLong, "漫长") {
+		// 超限句被跳过时不应整句截断：要么为空，要么是完整句
+		t.Errorf("over-limit sentence should be skipped, not truncated, got: %s", ctxLong)
+	}
+}
+
+func TestSplitStorySentences(t *testing.T) {
+	sentences := splitStorySentences("第一句。第二句！第三句？第四句；末句")
+	if len(sentences) != 5 {
+		t.Fatalf("expected 5 sentences, got %v", sentences)
+	}
+	if sentences[0] != "第一句" || sentences[4] != "末句" {
+		t.Errorf("sentence split mismatch: %v", sentences)
+	}
+	if got := splitStorySentences("   "); len(got) != 0 {
+		t.Errorf("whitespace-only plot should yield no sentences, got %v", got)
+	}
+	if got := splitStorySentences(""); len(got) != 0 {
+		t.Errorf("empty plot should yield no sentences, got %v", got)
 	}
 }

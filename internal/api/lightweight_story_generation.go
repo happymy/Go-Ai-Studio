@@ -2280,6 +2280,7 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 		systemPrompt,
 		userPrompt,
 		continuationPartial,
+		req.Plot,
 		func(system string, user string) (string, error) {
 			raw, requestErr := requestLightweightStoryOnce(provider, system, user, taskID)
 			if requestErr != nil {
