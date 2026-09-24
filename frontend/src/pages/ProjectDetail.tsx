@@ -1243,8 +1243,12 @@ export default function ProjectDetail() {
 
   // Character Actions
   const handleSaveCharacter = () => {
-    if (!currentChar.name || !currentChar.gender || !currentChar.description) {
-      toast.error("请填写必填项 (名称, 性别, 外貌描述)");
+    const missing: string[] = [];
+    if (!currentChar.name?.trim()) missing.push("角色名称");
+    if (!currentChar.gender?.trim()) missing.push("性别");
+    if (!currentChar.description?.trim()) missing.push("外貌描述");
+    if (missing.length > 0) {
+      toast.error(`请填写必填项（缺少：${missing.join("、")}）`);
       return;
     }
 

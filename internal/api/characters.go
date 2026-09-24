@@ -138,34 +138,56 @@ func UpdateCharacter(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("项目内已存在同名角色: %s", char.Name)})
 		return
 	}
-	char.Gender = strings.TrimSpace(updateData.Gender)
-	char.Age = strings.TrimSpace(updateData.Age)
-	char.BodyHeight = strings.TrimSpace(updateData.BodyHeight)
-	char.Era = strings.TrimSpace(updateData.Era)
-	char.Country = strings.TrimSpace(updateData.Country)
-	// 空值保护：前端缺失/未传的字段不得清空数据库已有内容，
-	// 避免“编辑保存后旧信息被清空/新值不生效”。
-	if d := strings.TrimSpace(updateData.Description); d != "" {
-		char.Description = d
+	// 空值保护：前端缺失/未传的文本字段一律不得清空数据库已有内容。
+	// 例如角色卡“锁定/解锁”按钮只提交 name+is_locked，若按旧逻辑全字段
+	// 覆盖，会把 gender/age/description 等一次性清空（实锤：角色“林屿”
+	// 因此丢失全部资料）。改为仅当请求携带非空值时更新对应字段。
+	if v := strings.TrimSpace(updateData.Gender); v != "" {
+		char.Gender = v
 	}
-	if a := strings.TrimSpace(updateData.Appearance); a != "" {
-		char.Appearance = a
+	if v := strings.TrimSpace(updateData.Age); v != "" {
+		char.Age = v
+	}
+	if v := strings.TrimSpace(updateData.BodyHeight); v != "" {
+		char.BodyHeight = v
+	}
+	if v := strings.TrimSpace(updateData.Era); v != "" {
+		char.Era = v
+	}
+	if v := strings.TrimSpace(updateData.Country); v != "" {
+		char.Country = v
+	}
+	if v := strings.TrimSpace(updateData.Description); v != "" {
+		char.Description = v
+	}
+	if v := strings.TrimSpace(updateData.Appearance); v != "" {
+		char.Appearance = v
+	}
+	if v := strings.TrimSpace(updateData.FaceFingerprint); v != "" {
+		char.FaceFingerprint = v
+	}
+	if v := strings.TrimSpace(updateData.Fingerprint); v != "" {
+		char.Fingerprint = v
+	}
+	if v := strings.TrimSpace(updateData.PositivePrompt); v != "" {
+		char.PositivePrompt = v
+	}
+	if v := strings.TrimSpace(updateData.NegativePrompt); v != "" {
+		char.NegativePrompt = v
+	}
+	if v := strings.TrimSpace(updateData.RefImage); v != "" {
+		char.RefImage = v
 	}
 	// 编辑界面的“外貌/预览说明”只写 description，这里把新描述同步到
-	// appearance，保证角色卡显示（appearance 优先）与编辑结果一致，
-	// 修复“保存后新的信息不生效”的问题。
+	// appearance，保证角色卡显示与编辑结果一致，修复“保存后不生效”。
 	if strings.TrimSpace(char.Description) != "" {
 		char.Appearance = char.Description
 	}
 	char.IsLocked = updateData.IsLocked
-	char.Fingerprint = updateData.Fingerprint
-	char.PositivePrompt = updateData.PositivePrompt
-	char.NegativePrompt = updateData.NegativePrompt
 	char.Width = 0
 	char.Height = 0
 	char.Seed = 0
 	char.OptimizeClothing = updateData.OptimizeClothing
-	char.RefImage = updateData.RefImage
 	char.UseRefImage = updateData.UseRefImage
 	char.UpdatedAt = time.Now()
 
