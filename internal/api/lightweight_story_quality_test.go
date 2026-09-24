@@ -239,3 +239,96 @@ func TestBuildLightweightStoryQualityReportMarkdown(t *testing.T) {
 		t.Errorf("expected 无 issues for clean report\n%s", cleanMarkdown)
 	}
 }
+
+func TestCheckObjectiveTurnArticulation(t *testing.T) {
+	// 正常：目标/转折各自成立且有变化
+	ok := []lightweightStoryScene{
+		{SceneID: 1, Objective: "王五想收摊", Turn: "沈西风推门进来", Narration: "王五开始搬门板"},
+		{SceneID: 2, Objective: "查明李三下落", Turn: "发现账本破绽", Narration: "沈西风翻开账本"},
+	}
+	if issues := checkObjectiveTurnArticulation(ok); len(issues) != 0 {
+		t.Fatalf("expected no issues for healthy scenes, got %v", issues)
+	}
+
+	// 转折是目标的复述 → 告警
+	repetitive := []lightweightStoryScene{
+		{SceneID: 1, Objective: "沈西风要找到李三", Turn: "沈西风要找到李三", Narration: "沈西风四处打听"},
+	}
+	issues := checkObjectiveTurnArticulation(repetitive)
+	if len(issues) != 1 || !strings.Contains(issues[0], "复述") {
+		t.Fatalf("expected turn-repeats-objective issue, got %v", issues)
+	}
+
+	// objective 存在但无 narration 落实 → 告警
+	noFallout := []lightweightStoryScene{
+		{SceneID: 1, Objective: "拿下城门", Turn: "守军溃散", Narration: "   "},
+	}
+	issues = checkObjectiveTurnArticulation(noFallout)
+	if len(issues) != 1 || !strings.Contains(issues[0], "narration") {
+		t.Fatalf("expected objective-without-narration issue, got %v", issues)
+	}
+
+	// 相邻两场 turn 相同 → 状态停滞告警
+	stalled := []lightweightStoryScene{
+		{SceneID: 1, Objective: "a", Turn: "僵持不下", Narration: "x"},
+		{SceneID: 2, Objective: "b", Turn: "僵持不下", Narration: "y"},
+	}
+	issues = checkObjectiveTurnArticulation(stalled)
+	if len(issues) != 1 || !strings.Contains(issues[0], "未推进") {
+		t.Fatalf("expected stalled-turn issue, got %v", issues)
+	}
+
+	// 字段全空 → 不告警
+	if issues := checkObjectiveTurnArticulation([]lightweightStoryScene{{SceneID: 1}}); len(issues) != 0 {
+		t.Fatalf("expected no issues for empty fields, got %v", issues)
+	}
+}
+
+func TestCheckCastPresenceInSceneBody(t *testing.T) {
+	// 出场角色在正文有可见痕迹 → 通过
+	visible := []lightweightStoryScene{
+		{SceneID: 1, Characters: []string{"沈西风", "王五"}, Narration: "沈西风推门，王五起身", ImagePrompt: "客栈夜", VideoPrompt: "沈西风走到柜台前，王五低头"},
+	}
+	if missing := checkCastPresenceInSceneBody(visible); len(missing) != 0 {
+		t.Fatalf("expected no missing cast, got %v", missing)
+	}
+
+	// 出场角色在正文无任何痕迹 → 告警
+	invisible := []lightweightStoryScene{
+		{SceneID: 1, Characters: []string{"沈西风", "赵六"}, Narration: "沈西风推门", VideoPrompt: "沈西风打量四周", ImagePrompt: "客栈空无一人"},
+	}
+	missing := checkCastPresenceInSceneBody(invisible)
+	if len(missing) != 1 || !strings.Contains(missing[0], "赵六") {
+		t.Fatalf("expected 赵六 missing, got %v", missing)
+	}
+
+	// 无出场角色标注 → 跳过
+	if missing := checkCastPresenceInSceneBody([]lightweightStoryScene{{SceneID: 1, Narration: "空镜"}}); len(missing) != 0 {
+		t.Fatalf("expected no issue without cast list, got %v", missing)
+	}
+}
+
+func TestBuildLightweightStoryQualityReportObjectiveTurnPenalty(t *testing.T) {
+	payload := &lightweightStoryResponse{
+		TotalScenes: 1,
+		Characters:  []lightweightStoryCharacter{{Name: "沈西风"}},
+		Scenes: []lightweightStoryScene{
+			{SceneID: 1, DurationSeconds: 5, Narration: "沈西风四处打听", ImagePrompt: "客栈夜", VideoPrompt: "沈西风四处打听李三下落",
+				Objective: "沈西风要找到李三", Turn: "沈西风要找到李三", Location: "客栈内夜", Characters: []string{"沈西风"}}, // 转折=目标复述
+		},
+	}
+	report := buildLightweightStoryQualityReport(payload, nil, "")
+	if len(report.ObjectiveTurn) != 1 || !strings.Contains(report.ObjectiveTurn[0], "复述") {
+		t.Fatalf("expected turn-repeats-objective in report, got %v", report.ObjectiveTurn)
+	}
+	if report.Score >= 100 {
+		t.Fatalf("objective/turn articulation problem should lower score, got %d", report.Score)
+	}
+	if !strings.Contains(report.Issues[0], "内容") {
+		t.Errorf("objective/turn issues should surface in issues list, got %v", report.Issues)
+	}
+	markdown := buildLightweightStoryQualityReportMarkdown(report, models.AutoGenerateRequest{GenerationMode: "h3_short", Episode: 1})
+	if !strings.Contains(markdown, "目标达成问题：1 条") {
+		t.Errorf("markdown should count objective/turn issues\n%s", markdown)
+	}
+}

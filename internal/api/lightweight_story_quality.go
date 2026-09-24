@@ -117,6 +117,66 @@ const (
 	NarrationRatioHardThreshold = 0.50
 )
 
+// checkObjectiveTurnArticulation 目标达成验证（第二梯队，R2 HAR 验证场景达成目标 的规则版）：
+// 在"每场有目标/转折"基础上，检查目标是否落实为镜头说明、转折是否真的产生了变化：
+// 1) objective 非空但该场 narration 为空 → 目标没有任何镜头说明落实；
+// 2) turn 与 objective 规范化后相同或互为包含 → 转折只是目标的复述，本场无实际变化；
+// 3) 相邻两场 turn 规范化后相同 → 剧情状态停滞未推进。
+// 返回问题清单；无问题时返回 nil（纯规则，不依赖分词，可靠但保守）。
+func checkObjectiveTurnArticulation(scenes []lightweightStoryScene) []string {
+	var issues []string
+	for i := range scenes {
+		scene := &scenes[i]
+		obj := strings.TrimSpace(scene.Objective)
+		turn := strings.TrimSpace(scene.Turn)
+		if obj == "" && turn == "" {
+			continue
+		}
+		if obj != "" && strings.TrimSpace(scene.Narration) == "" {
+			issues = append(issues, fmt.Sprintf("scene %d 目标为 %q，但该场没有任何 narration 说明，目标未落实为镜头内容", scene.SceneID, obj))
+		}
+		if obj != "" && turn != "" {
+			normObj := normalizeTextForMatch(obj)
+			normTurn := normalizeTextForMatch(turn)
+			if normObj != "" && normTurn != "" && (normObj == normTurn || strings.Contains(normObj, normTurn) || strings.Contains(normTurn, normObj)) {
+				issues = append(issues, fmt.Sprintf("scene %d 转折只是目标的复述（objective=%q / turn=%q），本场没有实际状态变化", scene.SceneID, obj, turn))
+			}
+		}
+	}
+	for i := 1; i < len(scenes); i++ {
+		prev := normalizeTextForMatch(scenes[i-1].Turn)
+		cur := normalizeTextForMatch(scenes[i].Turn)
+		if prev != "" && cur != "" && prev == cur {
+			issues = append(issues, fmt.Sprintf("scene %d 与 scene %d 的 turn 相同，剧情状态未推进", scenes[i-1].SceneID, scenes[i].SceneID))
+		}
+	}
+	return issues
+}
+
+// checkCastPresenceInSceneBody 出场角色可见性检查：scene.Characters 标注出场的角色，
+// 其名字必须出现在该场 narration/image_prompt/video_prompt 至少一处（规范化模糊包含），
+// 否则视为"在场人物无声消失"（h3_short 机制 C 的质量化落地）。
+func checkCastPresenceInSceneBody(scenes []lightweightStoryScene) []string {
+	var missing []string
+	for _, scene := range scenes {
+		if len(scene.Characters) == 0 {
+			continue
+		}
+		body := normalizeTextForMatch(strings.Join([]string{scene.Narration, scene.ImagePrompt, scene.VideoPrompt}, " "))
+		for _, name := range scene.Characters {
+			norm := normalizeTextForMatch(name)
+			if norm == "" {
+				continue
+			}
+			if body != "" && strings.Contains(body, norm) {
+				continue
+			}
+			missing = append(missing, fmt.Sprintf("scene %d 出场角色 %s 无可见痕迹", scene.SceneID, name))
+		}
+	}
+	return missing
+}
+
 // lightweightStoryQualityReport 生成质量报告（P3）。
 // 评分参照 1dashboard：结构 40 / 格式 30 / 内容 30，总分 0-100。
 type lightweightStoryQualityReport struct {
@@ -127,6 +187,8 @@ type lightweightStoryQualityReport struct {
 	DialogueLoss    []string `json:"dialogue_loss,omitempty"`
 	NarrationRatio  float64  `json:"narration_ratio"`
 	GhostCharacters []string `json:"ghost_characters,omitempty"`
+	CastMissing     []string `json:"cast_missing,omitempty"`
+	ObjectiveTurn   []string `json:"objective_turn_issues,omitempty"`
 	Issues          []string `json:"issues"`
 }
 
@@ -152,6 +214,9 @@ func buildLightweightStoryQualityReport(payload *lightweightStoryResponse, exist
 		knownNames = append(knownNames, ch.Alias...)
 	}
 	report.GhostCharacters = checkGhostCharacters(payload.Scenes, knownNames)
+	objectiveTurnIssues := checkObjectiveTurnArticulation(payload.Scenes)
+	report.ObjectiveTurn = objectiveTurnIssues
+	report.CastMissing = checkCastPresenceInSceneBody(payload.Scenes)
 
 	// 结构 40：scene_id 覆盖 1..N 完整性 / 时长合法 / 戏剧卡 objective 覆盖率
 	// 注：LLM 返回的数组顺序可能乱序（persist 前会按 scene_id 排序），
@@ -222,7 +287,7 @@ func buildLightweightStoryQualityReport(payload *lightweightStoryResponse, exist
 		format = 0
 	}
 
-	// 内容 30：幽灵角色 / 人物库为空 / 旁白占比
+	// 内容 30：幽灵角色 / 人物库为空 / 旁白占比 / 目标达成 / 出场角色可见性
 	content := 30
 	content -= 5 * len(report.GhostCharacters)
 	if len(report.GhostCharacters) > 0 {
@@ -231,6 +296,14 @@ func buildLightweightStoryQualityReport(payload *lightweightStoryResponse, exist
 	if len(payload.Characters) == 0 && len(existingCharacters) == 0 {
 		content -= 5
 		report.Issues = append(report.Issues, "内容：人物库为空")
+	}
+	for _, issue := range objectiveTurnIssues {
+		content -= 3
+		report.Issues = append(report.Issues, "内容："+issue)
+	}
+	content -= 2 * len(report.CastMissing)
+	if len(report.CastMissing) > 0 {
+		report.Issues = append(report.Issues, fmt.Sprintf("内容：%d 个出场角色无可见痕迹（在场人物无声消失）", len(report.CastMissing)))
 	}
 	switch {
 	case report.NarrationRatio > NarrationRatioHardThreshold:
@@ -263,9 +336,15 @@ func buildLightweightStoryQualityReportMarkdown(report lightweightStoryQualityRe
 	fmt.Fprintf(&sb, "| **总分** | **%d/100** |\n\n", report.Score)
 	fmt.Fprintf(&sb, "- 旁白占比：%.0f%%\n", report.NarrationRatio*100)
 	fmt.Fprintf(&sb, "- 台词缺失：%d 条\n", len(report.DialogueLoss))
+	fmt.Fprintf(&sb, "- 目标达成问题：%d 条（objective 无落点/转折复述/状态停滞）\n", len(report.ObjectiveTurn))
 	fmt.Fprintf(&sb, "- 幽灵角色：%d 个", len(report.GhostCharacters))
 	if len(report.GhostCharacters) > 0 {
 		sb.WriteString("（" + strings.Join(report.GhostCharacters, "、") + "）")
+	}
+	sb.WriteString("\n")
+	fmt.Fprintf(&sb, "- 出场角色无可见痕迹：%d 个", len(report.CastMissing))
+	if len(report.CastMissing) > 0 {
+		sb.WriteString("（" + strings.Join(report.CastMissing, "、") + "）")
 	}
 	sb.WriteString("\n\n")
 	if len(report.Issues) == 0 {
