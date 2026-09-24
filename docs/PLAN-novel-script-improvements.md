@@ -212,7 +212,9 @@ AutoGenerateRequest.Plot（剧本/分镜文本）
 | 1 镜头语言卡 + 跨场状态延续 | `59c078f` | `lightweightStoryScene` 新增 5 个可选字段（shot_size/camera_angle/camera_movement/blocking/ending_state，omitempty 向后兼容 + Unmarshal 脏类型容错）；场景写作卡普通模式给建议、h3_short strict 八个字段必填 + ending_state 承接规则（全剧末场与 episode_memory.ending_state 一致）；h3_short 骨架示例补 few-shot 字段；validate h3_short 缺镜头卡软告警不硬失败；续写 prompt 注入上一段末场 ending_state 作续写起点（禁止跳跃/凭空重置）。随 persist 的 ScenesJSON 自动留存，不扩 Shot 表 |
 | 2 目标达成验证 | `709a413` | `checkObjectiveTurnArticulation`（objective 无 narration 落实 / 转折复述目标 / 相邻场 turn 相同状态停滞）+ `checkCastPresenceInSceneBody`（出场角色在该场正文无可见痕迹判定，落实 h3_short 机制 C）；report 新增 objective_turn_issues/cast_missing 字段与内容维度扣分；markdown 新增统计行；完美用例 Score 仍 100（回归测试） |
 | 3 HAR 语境检索增强 | `1f5f258` | `buildStoryFixContext`：原文按句读标点切句，以本集新角色名+出场角色名为关键词规范化打分，命中片段按原文顺序拼接（上限 400 字、单句超限跳过不截断）注入 P4 修复指令；全部规则实现无需分词/向量依赖（符合"不引入新依赖"约束） |
-| — | — | **明确未落地**：P6 端到端手测（需真实 LLM 环境）；P0 管线接线（既定延后） |
+| — | — | **仍待 P6 手测**：端到端手测（需真实 LLM 环境）。P0 管线接线已于 `02620ce` 落地（同步 handler，见下） |
+
+**P0 管线接线（2026-09-24，commit `02620ce`）**：`runNovelToScript` 此前无任何接口暴露（引擎造好未装机）。新增 `POST /api/novel-to-script` 同步接口：`{title, novel_text}` → 校验 → 取激活 provider → 两段式（大纲→逐场展开）→ 返回结构化剧本初稿。校验与 provider 解析拆成纯函数便于单测；任务进度对未知 taskID 为 no-op 安全；纯新增路径不破坏现有 4 模式；按计划未接入 P1 归并/锚点；前端入口按钮另行评估（不改前端约束）。
 
 **明确不落地**（防范围蔓延）：CPC 因果图（需图/向量依赖）；参考帧锚定 / ArcFace 视觉验证（视频模型层，本链路只产文本 prompt）；Jellyfish/Toonflow 人机确认流（需前端交互）；镜像项目 Toonflow（16k⭐）为重前端工程，方法论已并入上表。
 
