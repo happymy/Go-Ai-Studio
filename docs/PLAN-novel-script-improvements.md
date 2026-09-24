@@ -284,3 +284,24 @@ AutoGenerateRequest.Plot（剧本/分镜文本）
 ### 8.3 结论
 
 > **质量闭环（评分/修复/归并/写作卡/角色资产）四种模式全吃；H3 适配（52 条硬约束、breakdown、strict 字段、参考图、首尾帧）只对 h3_short 模式生效。** `narration` 模式相对最"原生态"——只有公共链路，无任何 H3 专项约束。
+---
+
+## 9. LLM 配置"开启思考"开关（2026-09-24 补记）
+
+**需求**：LLM 配置项里增加"是否开启 think"选项（针对 Qwen3 等思考型模型）。
+
+**实测结论**（LM Studio 0.4.x OpenAI 兼容 /v1/chat/completions）：
+- 	hink / nable_thinking / easoning_effort / chat_template_kwargs.enable_thinking / easoning 全部被忽略，思考照常输出（reasoning_content 仍在）
+- 仅原生 REST v1 /api/v1/chat + easoning:"off" 实测有效（reasoning_output_tokens=0）
+
+**实现**（兼容安全路线，非侵入）：
+- LLMProvider.enable_thinking 新字段，默认 true=现状
+- 关闭思考时对 CompatLMStudio 请求注入 	hink:false：
+  - SDK 路径：uildLLMOpenAIClient 包 	hinkInjectionRoundTripper（仅 /chat/completions，body 注入）
+  - 直发路径：
+ewDirectLLMRequest 构造 body 时注入
+  - 仅 CompatLMStudio 注入，避免 OpenAI 官方端点对未知参数返回 400
+- 前端 LLMEngine 编辑面板新增开关（仅兼容 LM Studio 模式可调）
+- 生效范围：支持 think 参数的服务（Ollama / 新版 LM Studio）；当前 LM Studio 0.4.x 忽略该参数（UI 文案已如实标注），思考行为由其服务端/模型模板控制
+
+**测试**：llm_think_test.go（注入三态 + 非 JSON 透传 + 非目标路径 + 模型默认值），全绿。
