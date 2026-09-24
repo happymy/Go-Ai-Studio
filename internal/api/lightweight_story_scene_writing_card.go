@@ -13,6 +13,7 @@ func buildSceneWritingCard(strict bool) string {
 - scene_function：本场承担的镜头功能，从下面六个中选一个：建立、关系、行为、反应、信息揭露、收束
 - mood_arc：本场情绪弧，如"平静→紧张"，可空
 - location：本场地点资产（一句话，如"客栈大堂 内 夜，木桌油灯，桌面摆着酒碗"），独立于 image_prompt 单独成字段
+- characters：本场出场角色名列表，如 ["沈西风","王五"]，只写 existing_characters 与本集 characters 里登记过的人
 - 禁止在 image_prompt 的"场景"标签里写与 location 冲突的内容；同一地点再次出现时，沿用之前 location 写过的关键陈设与光线，禁止换一套描述。`
 
 	strictRule := `【场景写作卡·强制项】当前链路对 objective、turn、location 三个字段为必填：每个 scene 的 objective、turn、location 都不能为空；conflict 允许纯过渡场留空。`

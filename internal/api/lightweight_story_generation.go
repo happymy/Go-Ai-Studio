@@ -116,6 +116,68 @@ type lightweightStoryScene struct {
 	SceneFunction string `json:"scene_function,omitempty"`
 	MoodArc       string `json:"mood_arc,omitempty"`
 	Location      string `json:"location,omitempty"`
+	// P3 出场角色（可选，仅用于幽灵角色检查；omitempty 保持旧输出向后兼容）
+	Characters []string `json:"characters,omitempty"`
+}
+
+func (s *lightweightStoryScene) UnmarshalJSON(data []byte) error {
+	type rawScene struct {
+		SceneID         int             `json:"scene_id"`
+		DurationSeconds int             `json:"duration_seconds"`
+		Narration       json.RawMessage `json:"narration"`
+		ImagePrompt     json.RawMessage `json:"image_prompt"`
+		VideoPrompt     json.RawMessage `json:"video_prompt"`
+		Objective       json.RawMessage `json:"objective"`
+		Conflict        json.RawMessage `json:"conflict"`
+		Turn            json.RawMessage `json:"turn"`
+		SceneFunction   json.RawMessage `json:"scene_function"`
+		MoodArc         json.RawMessage `json:"mood_arc"`
+		Location        json.RawMessage `json:"location"`
+		Characters      json.RawMessage `json:"characters"`
+	}
+	var raw rawScene
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	var err error
+	*s = lightweightStoryScene{
+		SceneID:         raw.SceneID,
+		DurationSeconds: raw.DurationSeconds,
+	}
+	if s.Narration, err = coerceJSONScalarToString(raw.Narration); err != nil {
+		return fmt.Errorf("narration: %w", err)
+	}
+	if s.ImagePrompt, err = coerceJSONScalarToString(raw.ImagePrompt); err != nil {
+		return fmt.Errorf("image_prompt: %w", err)
+	}
+	if s.VideoPrompt, err = coerceJSONScalarToString(raw.VideoPrompt); err != nil {
+		return fmt.Errorf("video_prompt: %w", err)
+	}
+	if s.Objective, err = coerceJSONScalarToString(raw.Objective); err != nil {
+		return fmt.Errorf("objective: %w", err)
+	}
+	if s.Conflict, err = coerceJSONScalarToString(raw.Conflict); err != nil {
+		return fmt.Errorf("conflict: %w", err)
+	}
+	if s.Turn, err = coerceJSONScalarToString(raw.Turn); err != nil {
+		return fmt.Errorf("turn: %w", err)
+	}
+	if s.SceneFunction, err = coerceJSONScalarToString(raw.SceneFunction); err != nil {
+		return fmt.Errorf("scene_function: %w", err)
+	}
+	if s.MoodArc, err = coerceJSONScalarToString(raw.MoodArc); err != nil {
+		return fmt.Errorf("mood_arc: %w", err)
+	}
+	if s.Location, err = coerceJSONScalarToString(raw.Location); err != nil {
+		return fmt.Errorf("location: %w", err)
+	}
+	if raw.Characters != nil {
+		if s.Characters, err = coerceJSONStringSlice(raw.Characters); err != nil {
+			return fmt.Errorf("characters: %w", err)
+		}
+	}
+	return nil
 }
 
 type lightweightStoryEpisodeCharacterStatus struct {
@@ -2197,6 +2259,23 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 	if err != nil {
 		return nil, err
 	}
+
+	// P3：生成后主动暴露质量（P5 再做落地展示，此处先写任务进度日志）。
+	qualityReport := buildLightweightStoryQualityReport(payload, existingCharacters, req.Plot)
+	Log(
+		LogLevelInfo,
+		llmLogMessage("生成质量报告(轻量剧情一次性生成)", provider),
+		fmt.Sprintf(
+			"score=%d (结构%d/40 格式%d/30 内容%d/30) 台词缺失%d 幽灵角色%d 旁白占比%.0f%%",
+			qualityReport.Score,
+			qualityReport.Structure,
+			qualityReport.Format,
+			qualityReport.Content,
+			len(qualityReport.DialogueLoss),
+			len(qualityReport.GhostCharacters),
+			qualityReport.NarrationRatio*100,
+		),
+	)
 
 	charactersJSON, err := json.MarshalIndent(payload.Characters, "", "  ")
 	if err != nil {
