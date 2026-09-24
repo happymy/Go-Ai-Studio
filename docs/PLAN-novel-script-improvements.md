@@ -181,6 +181,32 @@ AutoGenerateRequest.Plot（剧本/分镜文本）
   - 自动修复最多 2 次重试，解析级失败不重试
   - **P1 跨集锚点断链（代码复核发现，2026-09-24，已修复）**：原 `models.Character` 表无 personality/relations/alias 列导致跨集注入只有 appearance。已通过扩表修复：加 `alias_json/personality_json/relations_json` 三列（AutoMigrate 自动加列，增量生效不动存量），persist 侧写入、`normalizeStoryCharacterRecord` 回填 → 跨集 existing_characters 现在包含完整锚点，跨集 alias 归并命中真正生效
 
+### 外部开源调研（2026-09-24 二轮，已记录、暂不实施）
+
+> 范围：GitHub 仓库检索 + 论文深挖，评估"剧本/镜头/分镜质量再提升"的可用方法论。
+> 状态：**用户决定暂不实施**，方向已排优先级，后续从第一梯队开始。
+
+**深挖的三个标杆**：
+
+| 项目 | 来源 | 核心方法论 |
+|------|------|-----------|
+| **R2**（Reader-Rewriter） | ICLR 2025 论文 arXiv 2503.15655 | 与我们路线最接近：小说→大纲→逐场生成。**HAR**（幻觉感知修正：检测→建议→**语境检索**→修正→合并）+ **CPC**（因果情节图）。逐场生成 prompt 注入"**上一场结果 + 相关章节**"；HAR 验证每场**达成大纲目标** |
+| **腾讯 ScriptAgent** | Tencent/digitalhuman（"The Script is All You Need"） | 三智能体：ScriptAgent（对话→详细拍摄脚本，开源模型+数据集）、DirectorAgent（多镜头 + **镜头间参考帧锚定**）、CriticAgent（LLM 主观评分 + CLIP/VSA 客观指标） |
+| **Jellyfish**（6.5k⭐） | Forget-C/Jellyfish | 剧本→镜头拆分 → 要素提取（角色/场景/道具/服装）→ **实体一致性库**（镜头级关联+名称检查+复用）。分镜"准备-确认"为人机流（不吸收） |
+
+**已有能力对照**：P0 转剧本两段式 ≈ R2 Rewriter；P1 角色锚点+跨集归并 ≈ Jellyfish 实体一致性（文本层）；P3 三维评分 ≈ CriticAgent 主观评分；P4 自动修复 ≈ R2 HAR 初代（缺"语境检索"步骤）。
+
+**可借鉴差距（按价值排序，落地顺序建议）**：
+
+| 梯队 | 方向 | 出处依据 | 内容 |
+|------|------|---------|------|
+| 1 | **跨场状态延续** | R2：逐场注入"上一场" | 逐场生成注入**上一场结束时的角色状态快照**（位置/持物/服装/情绪），解决跨镜头人物漂移→分镜连续性 |
+| 1 | **镜头语言卡** | R2 场景目标 / ScriptAgent shooting script | scene 增加**结构化镜头字段**（景别/机位/运镜/角色站位/情绪基调）并系统注入 prompt → 直接提升镜头/分镜质量 |
+| 2 | **目标达成验证** | R2 HAR 确认 scene 满足 storyline goals | 质量检查加"每场 narration/units 是否落实 objective 的结果"→ 剧本叙事质量 |
+| 3 | **HAR 语境检索增强** | R2 HAR Context Retrieval | P4 修正重试时把相关 novel 原文段落附进 fix 指令 → 修复更有依据 |
+
+**明确不落地**（防范围蔓延）：CPC 因果图（需图/向量依赖）；参考帧锚定 / ArcFace 视觉验证（视频模型层，本链路只产文本 prompt）；Jellyfish/Toonflow 人机确认流（需前端交互）；镜像项目 Toonflow（16k⭐）为重前端工程，方法论已并入上表。
+
 ---
 
 ## 5. 全程约束与工作方式
