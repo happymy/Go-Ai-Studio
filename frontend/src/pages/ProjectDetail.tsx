@@ -478,8 +478,8 @@ const isSeniorStageCharacter = (char?: Partial<Character>) => {
 
 const getCharacterAppearanceText = (char: Character): string => {
   return (
-    char.appearance?.trim() ||
     char.description?.trim() ||
+    char.appearance?.trim() ||
     "（暂无角色外观描述）"
   );
 };
@@ -1256,6 +1256,7 @@ export default function ProjectDetail() {
     const payload = {
       ...characterPayload,
       project_id: Number(id),
+      appearance: currentChar.description,
       is_locked: currentChar.is_locked ?? false,
       positive_prompt: stringifyLocalizedPromptText(currentCharPositivePrompt),
       negative_prompt: stringifyLocalizedPromptText(currentCharNegativePrompt),

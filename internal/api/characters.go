@@ -143,8 +143,20 @@ func UpdateCharacter(c *gin.Context) {
 	char.BodyHeight = strings.TrimSpace(updateData.BodyHeight)
 	char.Era = strings.TrimSpace(updateData.Era)
 	char.Country = strings.TrimSpace(updateData.Country)
-	char.Appearance = strings.TrimSpace(updateData.Appearance)
-	char.Description = strings.TrimSpace(updateData.Description)
+	// 空值保护：前端缺失/未传的字段不得清空数据库已有内容，
+	// 避免“编辑保存后旧信息被清空/新值不生效”。
+	if d := strings.TrimSpace(updateData.Description); d != "" {
+		char.Description = d
+	}
+	if a := strings.TrimSpace(updateData.Appearance); a != "" {
+		char.Appearance = a
+	}
+	// 编辑界面的“外貌/预览说明”只写 description，这里把新描述同步到
+	// appearance，保证角色卡显示（appearance 优先）与编辑结果一致，
+	// 修复“保存后新的信息不生效”的问题。
+	if strings.TrimSpace(char.Description) != "" {
+		char.Appearance = char.Description
+	}
 	char.IsLocked = updateData.IsLocked
 	char.Fingerprint = updateData.Fingerprint
 	char.PositivePrompt = updateData.PositivePrompt
