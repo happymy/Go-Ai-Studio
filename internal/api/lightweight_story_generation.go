@@ -521,13 +521,16 @@ func buildEpisodeContinuityHardRules(hasPreviousEpisode bool) string {
 
 func normalizeStoryCharacterRecord(char models.Character) lightweightStoryCharacter {
 	return lightweightStoryCharacter{
-		Name:       strings.TrimSpace(char.Name),
-		Gender:     strings.TrimSpace(char.Gender),
-		Age:        strings.TrimSpace(char.Age),
-		Height:     strings.TrimSpace(char.BodyHeight),
-		Era:        strings.TrimSpace(char.Era),
-		Country:    strings.TrimSpace(char.Country),
-		Appearance: strings.TrimSpace(char.Appearance),
+		Name:        strings.TrimSpace(char.Name),
+		Gender:      strings.TrimSpace(char.Gender),
+		Age:         strings.TrimSpace(char.Age),
+		Height:      strings.TrimSpace(char.BodyHeight),
+		Era:         strings.TrimSpace(char.Era),
+		Country:     strings.TrimSpace(char.Country),
+		Appearance:  strings.TrimSpace(char.Appearance),
+		Alias:       parseJSONStringArrayField(char.AliasJSON),
+		Personality: parseJSONStringArrayField(char.PersonalityJSON),
+		Relations:   parseJSONRelationsField(char.RelationsJSON),
 	}
 }
 
@@ -883,20 +886,21 @@ func buildLightweightStoryPrompts(project models.Project, req models.AutoGenerat
 	}
 	ctx.NarrativeNodesJSON = narrativeNodesJSON
 	ctx.NarrativeNodeCount = narrativeNodeCount
+	var systemPrompt, userPrompt string
+	h3Strict := false
 	switch normalizeAutoGenerateGenerationMode(req.GenerationMode, req.AllowCharacterSpeech) {
 	case AutoGenerateModeStoryboard:
-		systemPrompt, userPrompt := buildStoryboardLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(false), userPrompt, nil
+		systemPrompt, userPrompt = buildStoryboardLightweightStoryPrompts(ctx)
 	case AutoGenerateModeHighQuality:
-		systemPrompt, userPrompt := buildHighQualityLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(false), userPrompt, nil
+		systemPrompt, userPrompt = buildHighQualityLightweightStoryPrompts(ctx)
 	case AutoGenerateModeH3Short:
-		systemPrompt, userPrompt := buildH3ShortLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(true), userPrompt, nil
+		systemPrompt, userPrompt = buildH3ShortLightweightStoryPrompts(ctx)
+		h3Strict = true
 	default:
-		systemPrompt, userPrompt := buildStandardLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(false), userPrompt, nil
+		systemPrompt, userPrompt = buildStandardLightweightStoryPrompts(ctx)
 	}
+	systemPrompt = systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(h3Strict)
+	return systemPrompt, userPrompt, nil
 }
 
 func applyLightweightStoryContinuation(projectID uint, req models.AutoGenerateRequest, continueFromTaskID string, baseUserPrompt string, provider models.LLMProvider, taskID string) (string, *lightweightStoryPartialContext, error) {
@@ -1981,6 +1985,9 @@ func persistLightweightStoryPayload(projectID uint, req models.AutoGenerateReque
 				Era:              character.Era,
 				Country:          character.Country,
 				Appearance:       character.Appearance,
+				AliasJSON:        marshalJSONField(character.Alias),
+				PersonalityJSON:  marshalJSONField(character.Personality),
+				RelationsJSON:    marshalJSONField(character.Relations),
 				IsLocked:         true,
 				Description:      character.Appearance,
 				FaceFingerprint:  "",

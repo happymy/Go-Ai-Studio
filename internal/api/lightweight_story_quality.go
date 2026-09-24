@@ -12,15 +12,9 @@ import (
 // normalizeTextForMatch 用于台词/角色名模糊匹配的统一规范化：
 // 全角字母数字转半角、去掉全部空白与标点符号（保留汉字/字母/数字）。
 func normalizeTextForMatch(s string) string {
+	s = normalizeFullWidthAndWhitespace(s)
 	s = strings.Map(func(r rune) rune {
-		switch {
-		case r >= '０' && r <= '９':
-			return r - '０' + '0'
-		case r >= 'Ａ' && r <= 'Ｚ':
-			return r - 'Ａ' + 'A'
-		case r >= 'ａ' && r <= 'ｚ':
-			return r - 'ａ' + 'a'
-		case unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r):
+		if unicode.IsPunct(r) || unicode.IsSymbol(r) {
 			return -1
 		}
 		return r

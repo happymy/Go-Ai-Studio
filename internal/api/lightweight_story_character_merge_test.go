@@ -277,3 +277,47 @@ func TestBuildCharacterAssetRules(t *testing.T) {
 		}
 	}
 }
+
+func TestMarshalJSONField(t *testing.T) {
+	if got := marshalJSONField([]string{"沈公子"}); got != `["沈公子"]` {
+		t.Errorf("marshal alias mismatch: %s", got)
+	}
+	rels := []lightweightStoryCharacterRelation{{Name: "李三", Type: "旧识"}}
+	if got := marshalJSONField(rels); got != `[{"name":"李三","type":"旧识"}]` {
+		t.Errorf("marshal relations mismatch: %s", got)
+	}
+	if got := marshalJSONField(nil); got != "" {
+		t.Errorf("nil should marshal to empty, got %q", got)
+	}
+	if got := marshalJSONField(make(chan int)); got != "" {
+		t.Errorf("unmarshalable value should marshal to empty, got %q", got)
+	}
+}
+
+func TestParseJSONStringArrayField(t *testing.T) {
+	if got := parseJSONStringArrayField(`["沈公子","沈 西 风"]`); len(got) != 2 || got[0] != "沈公子" {
+		t.Errorf("parse alias mismatch: %v", got)
+	}
+	if got := parseJSONStringArrayField(""); got != nil {
+		t.Errorf("empty should return nil, got %v", got)
+	}
+	if got := parseJSONStringArrayField("not json"); got != nil {
+		t.Errorf("dirty should return nil, got %v", got)
+	}
+	if got := parseJSONStringArrayField("null"); len(got) != 0 {
+		t.Errorf("null array should be empty slice, got %v", got)
+	}
+}
+
+func TestParseJSONRelationsField(t *testing.T) {
+	got := parseJSONRelationsField(`[{"name":"李三","type":"旧识"}]`)
+	if len(got) != 1 || got[0].Name != "李三" || got[0].Type != "旧识" {
+		t.Errorf("parse relations mismatch: %v", got)
+	}
+	if got := parseJSONRelationsField(""); got != nil {
+		t.Errorf("empty should return nil, got %v", got)
+	}
+	if got := parseJSONRelationsField(`{"name":"李三"}`); got != nil {
+		t.Errorf("non-array dirty should return nil, got %v", got)
+	}
+}

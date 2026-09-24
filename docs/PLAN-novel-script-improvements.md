@@ -179,7 +179,7 @@ AutoGenerateRequest.Plot（剧本/分镜文本）
   - 归并为"格式/称谓"级保守归一，不做语义相似匹配（防误并）
   - 心理占比只告警不自动精简（刻意不吸收）
   - 自动修复最多 2 次重试，解析级失败不重试
-  - **P1 跨集锚点断链（代码复核发现，2026-09-24）**：`models.Character` 表无 personality/relations/alias 列，`persistLightweightStoryPayload` 只落 7 个旧字段、`normalizeStoryCharacterRecord` 不回填 → 生产链路下跨集注入的 `existing_characters` 永远只有 appearance，跨集 alias 归并命中只对本集新产出角色生效。不影响单集内归并（P1 主能力），跨集防漂移是未来扩展（需扩表 schema，超本轮范围，刻意不做）
+  - **P1 跨集锚点断链（代码复核发现，2026-09-24，已修复）**：原 `models.Character` 表无 personality/relations/alias 列导致跨集注入只有 appearance。已通过扩表修复：加 `alias_json/personality_json/relations_json` 三列（AutoMigrate 自动加列，增量生效不动存量），persist 侧写入、`normalizeStoryCharacterRecord` 回填 → 跨集 existing_characters 现在包含完整锚点，跨集 alias 归并命中真正生效
 
 ---
 

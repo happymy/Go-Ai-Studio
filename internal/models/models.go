@@ -19,7 +19,7 @@ type LLMProvider struct {
 	RequestTemperature          float32                `json:"request_temperature" gorm:"default:0"`
 	CompatLMStudio              bool                   `json:"compat_lm_studio" gorm:"default:false"`
 	LMStudioMaxTokens           int                    `json:"lm_studio_max_tokens" gorm:"default:8192"`
-	LMStudioContextWindow         int                    `json:"lm_studio_context_window" gorm:"default:40960"`
+	LMStudioContextWindow       int                    `json:"lm_studio_context_window" gorm:"default:40960"`
 	IsActive                    bool                   `json:"is_active" gorm:"default:false"`
 	UsageStats                  *LLMProviderUsageStats `json:"usage_stats,omitempty" gorm:"-"`
 	CreatedAt                   time.Time              `json:"created_at"`
@@ -233,6 +233,9 @@ type Character struct {
 	Status            string    `json:"status" gorm:"default:'draft'"` // draft, generated
 	GeneratedImage    string    `json:"generated_image"`               // Path to generated base image
 	GeneratedWorkflow string    `json:"generated_workflow"`
+	AliasJSON         string    `json:"alias_json"`       // []string JSON：别名（如"沈公子"），跨集注入与归并命中用
+	PersonalityJSON   string    `json:"personality_json"` // []string JSON：性格标签
+	RelationsJSON     string    `json:"relations_json"`   // []lightweightStoryCharacterRelation JSON：人物关系
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }

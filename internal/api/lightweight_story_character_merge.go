@@ -47,12 +47,9 @@ var characterHonorificSuffixes = []string{
 	"陛下", "殿下", "王爷", "师父", "姑娘家", "好汉", "英雄", "老板", "大娘", "妹子",
 }
 
-// normalizeLightweightCharacterName 规范化角色名，用于跨写法归并：
-// 1. 全角字母数字转半角；2. 去掉所有空白（含全角空格）；3. 剥离白名单内的称谓后缀。
-// 保守策略：只做格式与称谓层面的归一，不做语义相似匹配。
-func normalizeLightweightCharacterName(name string) string {
-	s := strings.TrimSpace(name)
-
+// normalizeFullWidthAndWhitespace 全角字母数字转半角、去除全部空白（含全角空格）。
+// 角色名归一化与文本模糊匹配归一化的公共前置步骤。
+func normalizeFullWidthAndWhitespace(s string) string {
 	s = strings.Map(func(r rune) rune {
 		switch {
 		case r >= '０' && r <= '９':
@@ -64,13 +61,19 @@ func normalizeLightweightCharacterName(name string) string {
 		}
 		return r
 	}, s)
-
-	s = strings.Map(func(r rune) rune {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) {
 			return -1
 		}
 		return r
 	}, s)
+}
+
+// normalizeLightweightCharacterName 规范化角色名，用于跨写法归并：
+// 1. 全角字母数字转半角；2. 去掉所有空白（含全角空格）；3. 剥离白名单内的称谓后缀。
+// 保守策略：只做格式与称谓层面的归一，不做语义相似匹配。
+func normalizeLightweightCharacterName(name string) string {
+	s := normalizeFullWidthAndWhitespace(strings.TrimSpace(name))
 
 	for _, suffix := range characterHonorificSuffixes {
 		if strings.HasSuffix(s, suffix) {
@@ -216,4 +219,46 @@ func buildCharacterAssetRules() string {
   · first_seen：该角色本集首次出现的 scene_id，可空
 - 若新角色与 existing_characters 中某角色是同一人（名字写法、称呼、别名的差异都算），必须把它当既有角色使用：沿用其 name 与 appearance 锚点，禁止另写一份外观，禁止重复放进 characters。
 - appearance 只写永久锚点（体态、发色、脸型、标志性特征），不写服装、持物、伤口与临时状态。`)
+}
+
+// marshalJSONField 把值序列化为 JSON 字符串（DB 扩展列用）；空值或序列化失败返回空串。
+func marshalJSONField(v any) string {
+	if v == nil {
+		return ""
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// parseJSONStringArrayField 解析 []string JSON 列；空串或脏数据返回空 slice，不报错。
+func parseJSONStringArrayField(s string) []string {
+	var out []string
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil
+	}
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
+// parseJSONRelationsField 解析人物关系 JSON 列；空串或脏数据返回空 slice，不报错。
+func parseJSONRelationsField(s string) []lightweightStoryCharacterRelation {
+	var out []lightweightStoryCharacterRelation
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil
+	}
+	if out == nil {
+		return []lightweightStoryCharacterRelation{}
+	}
+	return out
 }
