@@ -2298,6 +2298,7 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 		return nil, err
 	}
 
-	task.GlobalTaskManager.UpdateTaskProgress(taskID, 100, "角色与镜头已入库")
+	qualityReportMarkdown := buildLightweightStoryQualityReportMarkdown(qualityReport, req)
+	task.GlobalTaskManager.UpdateTaskProgress(taskID, 100, qualityReportMarkdown)
 	return payload, nil
 }

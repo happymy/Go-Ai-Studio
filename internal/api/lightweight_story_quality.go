@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"kt-ai-studio/internal/models"
 )
 
 // normalizeTextForMatch 用于台词/角色名模糊匹配的统一规范化：
@@ -247,4 +249,32 @@ func buildLightweightStoryQualityReport(payload *lightweightStoryResponse, exist
 	report.Content = content
 	report.Score = structure + format + content
 	return report
+}
+
+// buildLightweightStoryQualityReportMarkdown 把质量报告渲染为 Markdown，
+// 用于写入任务结果字段（task.Result），便于跨次运行对比分数。
+func buildLightweightStoryQualityReportMarkdown(report lightweightStoryQualityReport, req models.AutoGenerateRequest) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "## 生成质量报告（模式：%s / 第 %d 集）\n\n", strings.TrimSpace(req.GenerationMode), req.Episode)
+	fmt.Fprintf(&sb, "| 维度 | 得分 |\n|------|------|\n")
+	fmt.Fprintf(&sb, "| 结构 | %d/40 |\n", report.Structure)
+	fmt.Fprintf(&sb, "| 格式 | %d/30 |\n", report.Format)
+	fmt.Fprintf(&sb, "| 内容 | %d/30 |\n", report.Content)
+	fmt.Fprintf(&sb, "| **总分** | **%d/100** |\n\n", report.Score)
+	fmt.Fprintf(&sb, "- 旁白占比：%.0f%%\n", report.NarrationRatio*100)
+	fmt.Fprintf(&sb, "- 台词缺失：%d 条\n", len(report.DialogueLoss))
+	fmt.Fprintf(&sb, "- 幽灵角色：%d 个", len(report.GhostCharacters))
+	if len(report.GhostCharacters) > 0 {
+		sb.WriteString("（" + strings.Join(report.GhostCharacters, "、") + "）")
+	}
+	sb.WriteString("\n\n")
+	if len(report.Issues) == 0 {
+		sb.WriteString("问题清单：无\n")
+	} else {
+		sb.WriteString("问题清单：\n")
+		for _, issue := range report.Issues {
+			sb.WriteString("- " + issue + "\n")
+		}
+	}
+	return strings.TrimSpace(sb.String())
 }

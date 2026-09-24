@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"kt-ai-studio/internal/models"
 )
 
 func TestNormalizeTextForMatch(t *testing.T) {
@@ -153,5 +155,33 @@ func TestBuildLightweightStoryQualityReportNil(t *testing.T) {
 	}
 	if !strings.Contains(report.Issues[0], "nil") {
 		t.Errorf("expected nil issue message, got %v", report.Issues[0])
+	}
+}
+
+func TestBuildLightweightStoryQualityReportMarkdown(t *testing.T) {
+	report := lightweightStoryQualityReport{
+		Score:           85,
+		Structure:       40,
+		Format:          25,
+		Content:         20,
+		DialogueLoss:    []string{"李三在哪？"},
+		NarrationRatio:  0.42,
+		GhostCharacters: []string{"赵六"},
+		Issues:          []string{"格式：scene 1 video_prompt 为空", "内容：旁白占比 42% 超过软阈值"},
+	}
+	markdown := buildLightweightStoryQualityReportMarkdown(report, models.AutoGenerateRequest{GenerationMode: "h3_short", Episode: 3})
+	for _, keyword := range []string{"结构", "40/40", "格式", "25/30", "内容", "20/30", "85/100", "旁白占比：42%", "台词缺失：1 条", "幽灵角色：1 个", "h3_short", "第 3 集", "赵六"} {
+		if !strings.Contains(markdown, keyword) {
+			t.Errorf("markdown missing keyword %q\n%s", keyword, markdown)
+		}
+	}
+	if !strings.Contains(markdown, "问题清单：\n- ") {
+		t.Errorf("expected issues list in markdown\n%s", markdown)
+	}
+
+	clean := lightweightStoryQualityReport{Score: 100, Structure: 40, Format: 30, Content: 30}
+	cleanMarkdown := buildLightweightStoryQualityReportMarkdown(clean, models.AutoGenerateRequest{GenerationMode: "standard", Episode: 1})
+	if !strings.Contains(cleanMarkdown, "问题清单：无") {
+		t.Errorf("expected 无 issues for clean report\n%s", cleanMarkdown)
 	}
 }
