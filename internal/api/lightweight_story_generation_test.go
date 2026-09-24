@@ -272,3 +272,59 @@ func TestBuildLightweightStoryContinuationUserPromptCarriesEndingState(t *testin
 		t.Errorf("continuation prompt should not inject ending_state instruction when absent, got: %s", promptNoState)
 	}
 }
+
+// 全面审计回归保护：LLM 输出的场景写作卡/镜头卡字段落库时不得丢弃。
+// location→location_id、objective→scene_goal、blocking→character_blocking
+// 是 shots 表已有的结构化列，必须写入；此前全部硬编码为空。
+func TestPersistLightweightShotAnchors(t *testing.T) {
+	if err := db.DB.AutoMigrate(&models.Shot{}, &models.EpisodeMemory{}); err != nil {
+		t.Fatalf("migrate shots/episode_memories: %v", err)
+	}
+	db.DB.Where("project_id = ?", 77).Delete(&models.Shot{})
+	db.DB.Where("project_id = ?", 77).Delete(&models.EpisodeMemory{})
+
+	payload := &lightweightStoryResponse{
+		Scenes: []lightweightStoryScene{
+			{
+				SceneID:         1,
+				DurationSeconds: 5,
+				Narration:       "林屿走向更衣室。",
+				ImagePrompt:     "主体：中国男性，11岁，中景。",
+				VideoPrompt:     "integrated_multimodal_description: 林屿缓步走向更衣室门",
+				Objective:       "林屿走向更衣室，准备找姐姐。",
+				Location:        "卫校走廊 内 日光灯冷白，潮湿瓷砖与不锈钢托盘并存",
+				Blocking:        "林屿居画面中央偏左，背对镜头，面向更衣室门。",
+			},
+		},
+		EpisodeMemory: lightweightStoryEpisodeMemory{StorySummary: "概要", EndingState: "结尾"},
+	}
+	req := models.AutoGenerateRequest{Episode: 1}
+	if err := persistLightweightStoryPayload(77, req, payload, nil); err != nil {
+		t.Fatalf("persist failed: %v", err)
+	}
+
+	var shot models.Shot
+	if err := db.DB.Where("project_id = ?", 77).First(&shot).Error; err != nil {
+		t.Fatalf("load shot: %v", err)
+	}
+	if shot.LocationID != "卫校走廊 内 日光灯冷白，潮湿瓷砖与不锈钢托盘并存" {
+		t.Errorf("location_id lost: %q", shot.LocationID)
+	}
+	if shot.SceneGoal != "林屿走向更衣室，准备找姐姐。" {
+		t.Errorf("scene_goal lost: %q", shot.SceneGoal)
+	}
+	if shot.CharacterBlocking != "林屿居画面中央偏左，背对镜头，面向更衣室门。" {
+		t.Errorf("character_blocking lost: %q", shot.CharacterBlocking)
+	}
+
+	// 空值场景不报错、仍可落库（可选卡字段允许缺省）
+	db.DB.Where("project_id = ?", 77).Delete(&models.Shot{})
+	emptyPayload := &lightweightStoryResponse{
+		Scenes: []lightweightStoryScene{
+			{SceneID: 2, DurationSeconds: 5, ImagePrompt: "img", VideoPrompt: "vid"},
+		},
+	}
+	if err := persistLightweightStoryPayload(77, req, emptyPayload, nil); err != nil {
+		t.Fatalf("persist empty-anchor scene failed: %v", err)
+	}
+}
