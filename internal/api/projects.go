@@ -2614,7 +2614,10 @@ func requestLLMContentNonStreamingOpenAI(client *openai.Client, req openai.ChatC
 		return "", fmt.Errorf("empty completion response")
 	}
 	content := strings.TrimSpace(resp.Choices[0].Message.Content)
-	if streamLogLabel != "" && content != "" {
+	if content == "" {
+		return "", fmt.Errorf("empty completion response (llm returned no content field)")
+	}
+	if streamLogLabel != "" {
 		finalizeLLMStreamState(0, taskID, provider, streamLogLabel, content, "completed")
 	}
 	RecordLLMUsageOutput(provider, content)

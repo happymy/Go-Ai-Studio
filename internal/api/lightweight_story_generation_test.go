@@ -25,10 +25,38 @@ func TestMain(m *testing.M) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	db.DB = d
-	if err := d.AutoMigrate(&models.SystemLog{}, &models.Character{}); err != nil {
+	if err := d.AutoMigrate(&models.SystemLog{}, &models.Character{}, &models.SystemSettings{}); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())
+}
+
+func TestGetLLMTimeoutMinutes(t *testing.T) {
+	cases := []struct {
+		name     string
+		value    string
+		expected float64
+	}{
+		{"配置 240 分钟", "240", 240},
+		{"配置 15 分钟", "15", 15},
+		{"空值回落默认 30", "", 30},
+		{"非法值回落默认 30", "abc", 30},
+		{"配置 5 的合法下限", "5", 5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db.DB.Where("key = ?", KeyLLMTimeoutMinutes).Delete(&models.SystemSettings{})
+			if tc.value != "" {
+				if err := db.DB.Create(&models.SystemSettings{Key: KeyLLMTimeoutMinutes, Value: tc.value}).Error; err != nil {
+					t.Fatalf("seed setting: %v", err)
+				}
+			}
+			got := getLLMTimeoutMinutes().Minutes()
+			if got != tc.expected {
+				t.Fatalf("expected %.0f minutes, got %.0f", tc.expected, got)
+			}
+		})
+	}
 }
 
 func newValidatePayload(chars []lightweightStoryCharacter) *lightweightStoryResponse {

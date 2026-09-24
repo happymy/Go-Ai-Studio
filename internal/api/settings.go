@@ -238,6 +238,34 @@ func getConfiguredSceneImageSize() (int, int) {
 	return width, height
 }
 
+func getLLMTimeoutMinutes() time.Duration {
+	var settings []models.SystemSettings
+	db.DB.Find(&settings)
+
+	minutes := 0
+	for _, s := range settings {
+		if strings.EqualFold(s.Key, KeyLLMTimeoutMinutes) {
+			m, _ := strconv.Atoi(strings.TrimSpace(s.Value))
+			if m > 0 {
+				minutes = m
+				break
+			}
+		}
+	}
+
+	if minutes <= 0 {
+		m, _ := strconv.Atoi(defaultSettingValue(KeyLLMTimeoutMinutes))
+		if m > 0 {
+			minutes = m
+		}
+	}
+	if minutes <= 0 {
+		minutes = 30
+	}
+
+	return time.Duration(minutes) * time.Minute
+}
+
 func getConfiguredVideoSize() (int, int) {
 	var settings []models.SystemSettings
 	db.DB.Find(&settings)

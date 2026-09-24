@@ -971,9 +971,33 @@ func requestLightweightStoryOnce(provider models.LLMProvider, systemPrompt strin
 		},
 	}
 
+	// LM Studio 兼容的 Qwen3 thinking 模型其 reasoning_content 与最终
+	// content 共享 max_tokens 总预算：长任务（整集/剧本 JSON）的思维链可能
+	// 吃掉默认 8192 预算的 3/4，导致 content 被截断甚至为空
+	// ("empty llm response")。这里按 context window 的一半放大输出预算，
+	// 仅在用户未显式指定时生效，不改变既有配置语义。
+	if provider.CompatLMStudio && req.MaxTokens == 0 {
+		contextWindow := provider.LMStudioContextWindow
+		if contextWindow <= 0 {
+			contextWindow = 40960
+		}
+		budget := contextWindow / 2
+		if budget < 16384 {
+			budget = 16384
+		}
+		if budget > 32768 {
+			budget = 32768
+		}
+		req.MaxTokens = budget
+	}
+
 	checkLightweightStoryContextBudget(provider, systemPrompt, userPrompt, req.MaxTokens, taskID)
 
-	return requestLLMContentStreaming(provider, req, 15*time.Minute, taskID, "轻量剧情一次性生成")
+	timeout := getLLMTimeoutMinutes()
+	if timeout <= 0 {
+		timeout = 15 * time.Minute
+	}
+	return requestLLMContentStreaming(provider, req, timeout, taskID, "轻量剧情一次性生成")
 }
 
 // estimatePromptTokens heuristically estimates token usage of mostly-Chinese prompt
