@@ -109,6 +109,13 @@ type lightweightStoryScene struct {
 	Narration       string `json:"narration"`
 	ImagePrompt     string `json:"image_prompt"`
 	VideoPrompt     string `json:"video_prompt"`
+	// P2 场景戏剧卡（可选增强，omitempty 保持旧输出向后兼容）
+	Objective     string `json:"objective,omitempty"`
+	Conflict      string `json:"conflict,omitempty"`
+	Turn          string `json:"turn,omitempty"`
+	SceneFunction string `json:"scene_function,omitempty"`
+	MoodArc       string `json:"mood_arc,omitempty"`
+	Location      string `json:"location,omitempty"`
 }
 
 type lightweightStoryEpisodeCharacterStatus struct {
@@ -815,16 +822,16 @@ func buildLightweightStoryPrompts(project models.Project, req models.AutoGenerat
 	switch normalizeAutoGenerateGenerationMode(req.GenerationMode, req.AllowCharacterSpeech) {
 	case AutoGenerateModeStoryboard:
 		systemPrompt, userPrompt := buildStoryboardLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(false), userPrompt, nil
 	case AutoGenerateModeHighQuality:
 		systemPrompt, userPrompt := buildHighQualityLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(false), userPrompt, nil
 	case AutoGenerateModeH3Short:
 		systemPrompt, userPrompt := buildH3ShortLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(true), userPrompt, nil
 	default:
 		systemPrompt, userPrompt := buildStandardLightweightStoryPrompts(ctx)
-		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules() + "\n\n" + buildSceneWritingCard(false), userPrompt, nil
 	}
 }
 
@@ -1725,6 +1732,7 @@ func validateLightweightStoryResponse(payload *lightweightStoryResponse, existin
 
 	sceneIDs := make(map[int]struct{}, len(payload.Scenes))
 	expectedSceneID := 1
+	isH3Short := normalizeAutoGenerateGenerationMode(generationMode, false) == AutoGenerateModeH3Short
 	for _, scene := range payload.Scenes {
 		if scene.SceneID <= 0 {
 			return fmt.Errorf("scene_id must be greater than 0")
@@ -1744,6 +1752,27 @@ func validateLightweightStoryResponse(payload *lightweightStoryResponse, existin
 		}
 		if strings.TrimSpace(scene.VideoPrompt) == "" {
 			return fmt.Errorf("scene %d video_prompt is required", scene.SceneID)
+		}
+
+		// P2：h3_short 链路对场景戏剧卡三件套（objective/turn/location）软告警，不硬失败。
+		if isH3Short {
+			var missing []string
+			if strings.TrimSpace(scene.Objective) == "" {
+				missing = append(missing, "objective")
+			}
+			if strings.TrimSpace(scene.Turn) == "" {
+				missing = append(missing, "turn")
+			}
+			if strings.TrimSpace(scene.Location) == "" {
+				missing = append(missing, "location")
+			}
+			if len(missing) > 0 {
+				Log(
+					LogLevelWarn,
+					"h3_short 场景戏剧卡缺失(软告警)",
+					fmt.Sprintf("scene %d 缺少 %v；该场景将缺少明确的目标/转折/地点资产", scene.SceneID, missing),
+				)
+			}
 		}
 	}
 

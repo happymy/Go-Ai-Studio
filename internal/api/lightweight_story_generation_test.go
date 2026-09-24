@@ -13,12 +13,19 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	d, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	d, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {
 		panic(err)
 	}
+	// sqlite :memory: 每个连接是独立数据库；强制单连接，避免 AutoMigrate 建的表
+	// 被连接池中其他连接查询时出现 "no such table"。
+	sqlDB, err := d.DB()
+	if err != nil {
+		panic(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	db.DB = d
-	if err := d.AutoMigrate(&models.SystemLog{}); err != nil {
+	if err := d.AutoMigrate(&models.SystemLog{}, &models.Character{}); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())
