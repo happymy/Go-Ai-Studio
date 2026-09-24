@@ -59,8 +59,9 @@ func buildStoryFixInstruction(messages []string, partial *lightweightStoryRespon
 	return strings.TrimSpace(sb.String())
 }
 
-// runLightweightStoryGenerationWithRetry 执行"请求→解析→校验"循环：
+// runLightweightStoryGenerationWithRetry 执行"请求→解析→校验→质量后检"循环：
 // 校验失败且可修复时，携带错误清单与上次部分结果重试（最多 maxAttempts 次，含首次）。
+// postQualityCheck 在校验通过后执行：返回非空问题清单（如台词缺失）时同样触发一次携带清单的重试。
 // requestOnce 返回 LLM 原始文本；parseOnce 解析结构（解析失败视为不可修复，直接失败）。
 // continuationPartial 只在第一次成功后合并一次（重试为全量重新生成，不再续接）。
 // 返回最终 payload 与最后一次使用的 userPrompt。
@@ -71,6 +72,7 @@ func runLightweightStoryGenerationWithRetry(
 	requestOnce func(systemPrompt string, userPrompt string) (string, error),
 	parseOnce func(raw string) (*lightweightStoryResponse, error),
 	validate func(payload *lightweightStoryResponse) error,
+	postQualityCheck func(payload *lightweightStoryResponse) []string,
 	maxAttempts int,
 ) (*lightweightStoryResponse, string, error) {
 	if maxAttempts < 1 {
@@ -91,24 +93,35 @@ func runLightweightStoryGenerationWithRetry(
 			payload = mergeLightweightStoryContinuation(continuationPartial, payload)
 			continuationPartial = nil
 		}
+		var issueMessages []string
 		if err := validate(payload); err != nil {
 			fixable, messages := classifyStoryValidationError(err)
 			if !fixable || attempt >= maxAttempts {
 				return nil, currentUserPrompt, err
 			}
-			fixInstruction := buildStoryFixInstruction(messages, payload)
-			if fixInstruction == "" {
-				return nil, currentUserPrompt, err
+			issueMessages = messages
+		} else if postQualityCheck != nil {
+			// 校验通过但质量后检发现问题（如台词缺失）→ 同样进入修复重试。
+			if issues := postQualityCheck(payload); len(issues) > 0 {
+				if attempt >= maxAttempts {
+					break
+				}
+				issueMessages = issues
 			}
-			Log(
-				LogLevelWarn,
-				"校验失败自动修复",
-				fmt.Sprintf("attempt %d/%d：%v", attempt+1, maxAttempts, err),
-			)
-			currentUserPrompt = currentUserPrompt + "\n\n" + fixInstruction
-			continue
 		}
-		return payload, currentUserPrompt, nil
+		if len(issueMessages) == 0 {
+			return payload, currentUserPrompt, nil
+		}
+		fixInstruction := buildStoryFixInstruction(issueMessages, payload)
+		if fixInstruction == "" {
+			return nil, currentUserPrompt, fmt.Errorf("lightweight story generation fix instruction empty")
+		}
+		Log(
+			LogLevelWarn,
+			"自动修复重试",
+			fmt.Sprintf("attempt %d/%d：%v", attempt+1, maxAttempts, issueMessages),
+		)
+		currentUserPrompt = currentUserPrompt + "\n\n" + fixInstruction
 	}
 	return nil, currentUserPrompt, fmt.Errorf("lightweight story generation retry exhausted")
 }

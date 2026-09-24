@@ -85,7 +85,7 @@ func TestRunLightweightStoryGenerationWithRetryFixesAndSucceeds(t *testing.T) {
 		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
 	}
 
-	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, 3)
+	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 3)
 	if err != nil {
 		t.Fatalf("expected success after fix, got %v", err)
 	}
@@ -112,7 +112,7 @@ func TestRunLightweightStoryGenerationWithRetryExhausts(t *testing.T) {
 	validate := func(p *lightweightStoryResponse) error {
 		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
 	}
-	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, 2)
+	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 2)
 	if err == nil {
 		t.Fatal("expected error after retries exhausted")
 	}
@@ -136,7 +136,7 @@ func TestRunLightweightStoryGenerationWithRetryParseFailureNoRetry(t *testing.T)
 	validate := func(p *lightweightStoryResponse) error {
 		return nil
 	}
-	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, 3)
+	_, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 3)
 	if err == nil {
 		t.Fatal("expected parse error to fail immediately")
 	}
@@ -157,10 +157,54 @@ func TestRunLightweightStoryGenerationWithRetryMaxAttemptsOne(t *testing.T) {
 	validate := func(p *lightweightStoryResponse) error {
 		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
 	}
-	if _, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, 1); err == nil {
+	if _, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, nil, 1); err == nil {
 		t.Fatal("expected error with maxAttempts=1")
 	}
 	if requestCount != 1 {
 		t.Errorf("expected single attempt, got %d", requestCount)
+	}
+}
+
+func TestRunLightweightStoryGenerationWithRetryDialogueLossTriggersRetry(t *testing.T) {
+	// plot 含台词"李三在哪？"，首轮响应未落位 → 触发台词缺失重试；第二轮补齐。
+	const validWithDialogue = `{
+		"total_scenes": 1,
+		"characters": [{"name": "沈西风"}],
+		"scenes": [{"scene_id": 1, "duration_seconds": 5, "narration": "沈西风追问李三在哪", "image_prompt": "img", "video_prompt": "沈西风追问李三在哪"}],
+		"episode_memory": {"story_summary": "s"}
+	}`
+	const missingDialogue = `{
+		"total_scenes": 1,
+		"characters": [{"name": "沈西风"}],
+		"scenes": [{"scene_id": 1, "duration_seconds": 5, "narration": "沈西风看着窗外", "image_prompt": "img", "video_prompt": "沈西风沉默"}],
+		"episode_memory": {"story_summary": "s"}
+	}`
+	responses := []string{missingDialogue, validWithDialogue}
+	requestCount := 0
+	requestOnce := func(system string, user string) (string, error) {
+		requestCount++
+		if requestCount == 2 && !strings.Contains(user, "未通过校验") {
+			t.Errorf("retry userPrompt should carry quality issue list")
+		}
+		return responses[requestCount-1], nil
+	}
+	parseOnce := func(raw string) (*lightweightStoryResponse, error) {
+		return parseStrictLightweightStoryResponse(raw)
+	}
+	validate := func(p *lightweightStoryResponse) error {
+		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
+	}
+	postQuality := func(p *lightweightStoryResponse) []string {
+		return checkDialogueCoverage("王五说：“李三在哪？”", p.Scenes)
+	}
+	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, postQuality, 3)
+	if err != nil {
+		t.Fatalf("expected success after dialogue-loss retry, got %v", err)
+	}
+	if requestCount != 2 {
+		t.Errorf("expected 2 requests (dialogue loss trigger), got %d", requestCount)
+	}
+	if len(payload.Scenes) != 1 || !strings.Contains(payload.Scenes[0].Narration, "李三在哪") {
+		t.Errorf("expected fixed dialogue, got %+v", payload.Scenes)
 	}
 }

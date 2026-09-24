@@ -2234,6 +2234,10 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 		func(p *lightweightStoryResponse) error {
 			return validateLightweightStoryResponse(p, existingCharacters, req.GenerationMode, narrativeNodeCount)
 		},
+		func(p *lightweightStoryResponse) []string {
+			// P4：台词缺失（P3 质量检查）也触发修复重试。
+			return checkDialogueCoverage(req.Plot, p.Scenes)
+		},
 		3,
 	)
 	if err != nil {
