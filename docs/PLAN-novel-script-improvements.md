@@ -181,10 +181,10 @@ AutoGenerateRequest.Plot（剧本/分镜文本）
   - 自动修复最多 2 次重试，解析级失败不重试
   - **P1 跨集锚点断链（代码复核发现，2026-09-24，已修复）**：原 `models.Character` 表无 personality/relations/alias 列导致跨集注入只有 appearance。已通过扩表修复：加 `alias_json/personality_json/relations_json` 三列（AutoMigrate 自动加列，增量生效不动存量），persist 侧写入、`normalizeStoryCharacterRecord` 回填 → 跨集 existing_characters 现在包含完整锚点，跨集 alias 归并命中真正生效
 
-### 外部开源调研（2026-09-24 二轮，已记录、暂不实施）
+### 外部开源调研（2026-09-24 二轮，已记录；三梯队已实施见下）
 
 > 范围：GitHub 仓库检索 + 论文深挖，评估"剧本/镜头/分镜质量再提升"的可用方法论。
-> 状态：**用户决定暂不实施**，方向已排优先级，后续从第一梯队开始。
+> 状态：~~用户决定暂不实施，方向已排优先级~~ → **2026-09-24 用户确认实施，三梯队全部落地**（commit 59c078f / 709a413 / 1f5f258）。
 
 **深挖的三个标杆**：
 
@@ -204,6 +204,15 @@ AutoGenerateRequest.Plot（剧本/分镜文本）
 | 1 | **镜头语言卡** | R2 场景目标 / ScriptAgent shooting script | scene 增加**结构化镜头字段**（景别/机位/运镜/角色站位/情绪基调）并系统注入 prompt → 直接提升镜头/分镜质量 |
 | 2 | **目标达成验证** | R2 HAR 确认 scene 满足 storyline goals | 质量检查加"每场 narration/units 是否落实 objective 的结果"→ 剧本叙事质量 |
 | 3 | **HAR 语境检索增强** | R2 HAR Context Retrieval | P4 修正重试时把相关 novel 原文段落附进 fix 指令 → 修复更有依据 |
+
+**实施记录（2026-09-24，均已测试先行、全量 `go test ./internal/api` 绿）**：
+
+| 梯队 | commit | 落地内容 |
+|------|--------|---------|
+| 1 镜头语言卡 + 跨场状态延续 | `59c078f` | `lightweightStoryScene` 新增 5 个可选字段（shot_size/camera_angle/camera_movement/blocking/ending_state，omitempty 向后兼容 + Unmarshal 脏类型容错）；场景写作卡普通模式给建议、h3_short strict 八个字段必填 + ending_state 承接规则（全剧末场与 episode_memory.ending_state 一致）；h3_short 骨架示例补 few-shot 字段；validate h3_short 缺镜头卡软告警不硬失败；续写 prompt 注入上一段末场 ending_state 作续写起点（禁止跳跃/凭空重置）。随 persist 的 ScenesJSON 自动留存，不扩 Shot 表 |
+| 2 目标达成验证 | `709a413` | `checkObjectiveTurnArticulation`（objective 无 narration 落实 / 转折复述目标 / 相邻场 turn 相同状态停滞）+ `checkCastPresenceInSceneBody`（出场角色在该场正文无可见痕迹判定，落实 h3_short 机制 C）；report 新增 objective_turn_issues/cast_missing 字段与内容维度扣分；markdown 新增统计行；完美用例 Score 仍 100（回归测试） |
+| 3 HAR 语境检索增强 | `1f5f258` | `buildStoryFixContext`：原文按句读标点切句，以本集新角色名+出场角色名为关键词规范化打分，命中片段按原文顺序拼接（上限 400 字、单句超限跳过不截断）注入 P4 修复指令；全部规则实现无需分词/向量依赖（符合"不引入新依赖"约束） |
+| — | — | **明确未落地**：P6 端到端手测（需真实 LLM 环境）；P0 管线接线（既定延后） |
 
 **明确不落地**（防范围蔓延）：CPC 因果图（需图/向量依赖）；参考帧锚定 / ArcFace 视觉验证（视频模型层，本链路只产文本 prompt）；Jellyfish/Toonflow 人机确认流（需前端交互）；镜像项目 Toonflow（16k⭐）为重前端工程，方法论已并入上表。
 
