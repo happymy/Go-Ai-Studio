@@ -18,25 +18,41 @@ import (
 	"gorm.io/gorm"
 )
 
+// lightweightStoryCharacterRelation 角色之间的明确关系（P1 新增，可选）。
+type lightweightStoryCharacterRelation struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
 type lightweightStoryCharacter struct {
-	Name       string `json:"name"`
-	Gender     string `json:"gender"`
-	Age        string `json:"age"`
-	Height     string `json:"height"`
-	Era        string `json:"era"`
-	Country    string `json:"country"`
-	Appearance string `json:"appearance"`
+	Name        string                              `json:"name"`
+	Gender      string                              `json:"gender"`
+	Age         string                              `json:"age"`
+	Height      string                              `json:"height"`
+	Era         string                              `json:"era"`
+	Country     string                              `json:"country"`
+	Appearance  string                              `json:"appearance"`
+	Alias       []string                            `json:"alias,omitempty"`
+	Personality []string                            `json:"personality,omitempty"`
+	Demeanor    string                              `json:"demeanor,omitempty"`
+	Relations   []lightweightStoryCharacterRelation `json:"relations,omitempty"`
+	FirstSeen   string                              `json:"first_seen,omitempty"`
 }
 
 func (c *lightweightStoryCharacter) UnmarshalJSON(data []byte) error {
 	type rawCharacter struct {
-		Name       json.RawMessage `json:"name"`
-		Gender     json.RawMessage `json:"gender"`
-		Age        json.RawMessage `json:"age"`
-		Height     json.RawMessage `json:"height"`
-		Era        json.RawMessage `json:"era"`
-		Country    json.RawMessage `json:"country"`
-		Appearance json.RawMessage `json:"appearance"`
+		Name        json.RawMessage `json:"name"`
+		Gender      json.RawMessage `json:"gender"`
+		Age         json.RawMessage `json:"age"`
+		Height      json.RawMessage `json:"height"`
+		Era         json.RawMessage `json:"era"`
+		Country     json.RawMessage `json:"country"`
+		Appearance  json.RawMessage `json:"appearance"`
+		Alias       json.RawMessage `json:"alias"`
+		Personality json.RawMessage `json:"personality"`
+		Demeanor    json.RawMessage `json:"demeanor"`
+		Relations   json.RawMessage `json:"relations"`
+		FirstSeen   json.RawMessage `json:"first_seen"`
 	}
 	var raw rawCharacter
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -64,6 +80,25 @@ func (c *lightweightStoryCharacter) UnmarshalJSON(data []byte) error {
 	}
 	if c.Appearance, err = coerceJSONScalarToString(raw.Appearance); err != nil {
 		return fmt.Errorf("appearance: %w", err)
+	}
+	if c.Alias, err = coerceJSONStringSlice(raw.Alias); err != nil {
+		return fmt.Errorf("alias: %w", err)
+	}
+	if c.Personality, err = coerceJSONStringSlice(raw.Personality); err != nil {
+		return fmt.Errorf("personality: %w", err)
+	}
+	if c.Demeanor, err = coerceJSONScalarToString(raw.Demeanor); err != nil {
+		return fmt.Errorf("demeanor: %w", err)
+	}
+	if raw.Relations != nil {
+		var rels []lightweightStoryCharacterRelation
+		if err := json.Unmarshal(raw.Relations, &rels); err != nil {
+			return fmt.Errorf("relations: %w", err)
+		}
+		c.Relations = rels
+	}
+	if c.FirstSeen, err = coerceJSONScalarToString(raw.FirstSeen); err != nil {
+		return fmt.Errorf("first_seen: %w", err)
 	}
 	return nil
 }
@@ -780,16 +815,16 @@ func buildLightweightStoryPrompts(project models.Project, req models.AutoGenerat
 	switch normalizeAutoGenerateGenerationMode(req.GenerationMode, req.AllowCharacterSpeech) {
 	case AutoGenerateModeStoryboard:
 		systemPrompt, userPrompt := buildStoryboardLightweightStoryPrompts(ctx)
-		return systemPrompt, userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
 	case AutoGenerateModeHighQuality:
 		systemPrompt, userPrompt := buildHighQualityLightweightStoryPrompts(ctx)
-		return systemPrompt, userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
 	case AutoGenerateModeH3Short:
 		systemPrompt, userPrompt := buildH3ShortLightweightStoryPrompts(ctx)
-		return systemPrompt, userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
 	default:
 		systemPrompt, userPrompt := buildStandardLightweightStoryPrompts(ctx)
-		return systemPrompt, userPrompt, nil
+		return systemPrompt + buildCharacterAssetRules(), userPrompt, nil
 	}
 }
 
@@ -2116,6 +2151,15 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 			err.Error(),
 		)
 		return nil, err
+	}
+
+	removedExisting, merged := mergeLightweightStoryCharacters(payload, existingCharacters)
+	if removedExisting > 0 || merged > 0 {
+		Log(
+			LogLevelInfo,
+			llmLogMessage("人物归并(轻量剧情一次性生成)", provider),
+			fmt.Sprintf("与既有角色规范化同名移除 %d 个，本集内部合并 %d 个", removedExisting, merged),
+		)
 	}
 
 	task.GlobalTaskManager.UpdateTaskProgress(taskID, 82, "写入角色与镜头数据")
