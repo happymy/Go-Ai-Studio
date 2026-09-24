@@ -49,8 +49,8 @@ func buildHighQualityLightweightStoryPrompts(ctx lightweightStoryPromptContext) 
 4. 所有字段值必须使用简体中文；video_prompt 可以插入简短、明确、稳定的英文镜头运动短语，但其余正文内容必须使用中文。
 5. existing_characters 是项目已锁定角色资产列表。若数组为空，代表当前没有既有锁定角色；不要虚构旧角色来源、旧外观资产或历史关系。若数组非空，它们只作为续写输入和场景复用依据，不允许修改，也不允许再次作为旧角色回填到输出的 characters 数组。
 6. characters 数组只能返回本集首次出现的新角色；scenes 中出现的人物锚点只能来自 existing_characters 与本次返回的 characters。
-7. 新角色必须完整生成 name、gender、age、height、era、country、appearance。gender 只能返回：男性、女性、其他。
-8. age、height、era、country 都必须明确，禁止模糊词。appearance 只写永久人物锚点，不写可变服装、不写可变配饰、不写手持物、不写临时动作。
+7. 新角色必须完整生成 name、gender、age、height、era、country、appearance、face_fingerprint、fingerprint。gender 只能返回：男性、女性、其他。
+8. age、height、era、country 都必须明确，禁止模糊词。appearance 只写永久脸部与身材锚点（发型、脸型、五官、肤色、身材比例、身高、年龄、国别或文化、特征识别点），不写可变服装、不写可变配饰、不写手持物、不写临时动作。face_fingerprint 单独复用 appearance 里的脸部与基础发型关键词，作为脸部锁定锚点。fingerprint 单独写非脸部的体态、固定服装与稳定装备锚点：身材、体态、肩背腿比例；剧情中长期固定的服装（职业装、制服、固定穿搭）写清颜色、材质或版型；长期佩戴的饰品与常备装备只写佩戴、腰悬、背负、入鞘等稳定状态；禁止写临时换装、临时手持物与临时动作；确实没有固定服装与装备时，也必须至少写清身材体态与肩背腿比例，禁止留空。
 9. 角色脸部禁止模板化。你必须主动拉开同一集角色之间的脸部结构差异；若是同国别、同年龄层、同性别角色，至少主动拉开五个脸部维度。
 9.5 为了保证最终 JSON 永远合法，任何字段值正文内部若需要引号，只允许使用中文直角引号「」或直接改写成冒号引出内容；禁止在 narration、image_prompt、video_prompt、Audio 正文里直接使用 ASCII 双引号 " 包裹台词、短语或强调词。ASCII 双引号只允许用于 JSON 结构本身。
 10. scenes 必须先服务完整讲清故事，再服务镜头表达。禁止只抽取少量燃点导致故事讲不完整，也禁止堆积平淡过渡镜头。
@@ -117,7 +117,9 @@ func buildHighQualityLightweightStoryPrompts(ctx lightweightStoryPromptContext) 
       "height": "",
       "era": "",
       "country": "",
-      "appearance": ""
+      "appearance": "",
+      "face_fingerprint": "",
+      "fingerprint": ""
     }
   ],
   "scenes": [

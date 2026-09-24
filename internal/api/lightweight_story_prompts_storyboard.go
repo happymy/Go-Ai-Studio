@@ -101,8 +101,8 @@ func buildStoryboardLightweightStoryPrompts(ctx lightweightStoryPromptContext) (
 	4. 这个模式不是让你重写故事，而是把现成分镜脚本翻译成 z-image 首帧图和 LTX2.3 视频都能执行的视觉语言。
 	5. 你必须优先保留原镜号顺序、原对白归属、原场景切换、原机位意图、原景别意图、原动作逻辑、原叙事节奏和原时间安排；不要把输入脚本改写成另一套分镜，也不要删掉原脚本已经明确写出的关键动作、关键反应和明确台词。
 	6. characters 数组只返回本集首次出现的新角色；existing_characters 里的旧角色不能重复回填。
-	7. 新角色必须完整返回 name、gender、age、height、era、country、appearance；gender 只能返回：男性、女性、其他。age、height、era、country 都必须明确，不要用“20岁出头”“30多岁”“高挑”“偏高”这种模糊说法；这几个字段在 JSON 里也必须是字符串，哪怕看起来像数字，也要写成例如 24、178cm 这样的字符串形式，而不是 JSON 数字。
-	8. appearance 只写永久人物锚点，不写当前镜头服装、不写当前镜头伤口、不写当前镜头手持武器、不写当前镜头动作、不写临时血迹、不写临时道具，不要把剧本里的当场状态直接塞进角色资产。
+	7. 新角色必须完整返回 name、gender、age、height、era、country、appearance、face_fingerprint、fingerprint；gender 只能返回：男性、女性、其他。age、height、era、country 都必须明确，不要用“20岁出头”“30多岁”“高挑”“偏高”这种模糊说法；这几个字段在 JSON 里也必须是字符串，哪怕看起来像数字，也要写成例如 24、178cm 这样的字符串形式，而不是 JSON 数字。
+	8. appearance 只写永久脸部与身材锚点，不写当前镜头服装、不写当前镜头伤口、不写当前镜头手持武器、不写当前镜头动作、不写临时血迹、不写临时道具，不要把剧本里的当场状态直接塞进角色资产。face_fingerprint 单独复用 appearance 里的脸部与基础发型关键词，作为脸部锁定锚点。fingerprint 单独写非脸部的体态、固定服装与稳定装备锚点：身材、体态、肩背腿比例；剧情中长期固定的服装（职业装、制服、固定穿搭）写清颜色、材质或版型；长期佩戴的饰品与常备装备只写佩戴、腰悬、背负、入鞘等稳定状态；禁止写临时换装、临时手持物与临时动作；确实没有固定服装与装备时，也必须至少写清身材体态与肩背腿比例，禁止留空。
 	8.5 为了保证最终 JSON 永远合法，任何字段值正文内部若需要引号，只允许使用中文直角引号「」或直接改写成冒号引出内容；禁止在 narration、image_prompt、video_prompt、Audio 正文里直接使用 ASCII 双引号 " 包裹台词、短语或强调词。ASCII 双引号只允许用于 JSON 结构本身。
 	9. narration 字段必须保留，并返回给编辑和人工浏览的简短镜头说明。narration 只用于入库后帮助人理解当前片段想表达什么，不参与 image_prompt、video_prompt、Audio 或后续生成约束；不要把 narration 当成对白、画外音或系统说明。每条 narration 用 1 到 2 句中文概括当前镜头的剧情推进、人物状态或信息落点，避免空泛文学化评价。%s
 	10. 当前镜头若需要听见角色说话，需要听见的话必须直接写进 video_prompt 对应动作时刻的连续正文，并尽量按原顺序保留原句。
@@ -143,7 +143,9 @@ func buildStoryboardLightweightStoryPrompts(ctx lightweightStoryPromptContext) (
       "height": "",
       "era": "",
       "country": "",
-      "appearance": ""
+      "appearance": "",
+      "face_fingerprint": "",
+      "fingerprint": ""
     }
   ],
   "scenes": [

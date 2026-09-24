@@ -25,34 +25,38 @@ type lightweightStoryCharacterRelation struct {
 }
 
 type lightweightStoryCharacter struct {
-	Name        string                              `json:"name"`
-	Gender      string                              `json:"gender"`
-	Age         string                              `json:"age"`
-	Height      string                              `json:"height"`
-	Era         string                              `json:"era"`
-	Country     string                              `json:"country"`
-	Appearance  string                              `json:"appearance"`
-	Alias       []string                            `json:"alias,omitempty"`
-	Personality []string                            `json:"personality,omitempty"`
-	Demeanor    string                              `json:"demeanor,omitempty"`
-	Relations   []lightweightStoryCharacterRelation `json:"relations,omitempty"`
-	FirstSeen   string                              `json:"first_seen,omitempty"`
+	Name            string                              `json:"name"`
+	Gender          string                              `json:"gender"`
+	Age             string                              `json:"age"`
+	Height          string                              `json:"height"`
+	Era             string                              `json:"era"`
+	Country         string                              `json:"country"`
+	Appearance      string                              `json:"appearance"`
+	FaceFingerprint string                              `json:"face_fingerprint,omitempty"`
+	Fingerprint     string                              `json:"fingerprint,omitempty"`
+	Alias           []string                            `json:"alias,omitempty"`
+	Personality     []string                            `json:"personality,omitempty"`
+	Demeanor        string                              `json:"demeanor,omitempty"`
+	Relations       []lightweightStoryCharacterRelation `json:"relations,omitempty"`
+	FirstSeen       string                              `json:"first_seen,omitempty"`
 }
 
 func (c *lightweightStoryCharacter) UnmarshalJSON(data []byte) error {
 	type rawCharacter struct {
-		Name        json.RawMessage `json:"name"`
-		Gender      json.RawMessage `json:"gender"`
-		Age         json.RawMessage `json:"age"`
-		Height      json.RawMessage `json:"height"`
-		Era         json.RawMessage `json:"era"`
-		Country     json.RawMessage `json:"country"`
-		Appearance  json.RawMessage `json:"appearance"`
-		Alias       json.RawMessage `json:"alias"`
-		Personality json.RawMessage `json:"personality"`
-		Demeanor    json.RawMessage `json:"demeanor"`
-		Relations   json.RawMessage `json:"relations"`
-		FirstSeen   json.RawMessage `json:"first_seen"`
+		Name            json.RawMessage `json:"name"`
+		Gender          json.RawMessage `json:"gender"`
+		Age             json.RawMessage `json:"age"`
+		Height          json.RawMessage `json:"height"`
+		Era             json.RawMessage `json:"era"`
+		Country         json.RawMessage `json:"country"`
+		Appearance      json.RawMessage `json:"appearance"`
+		FaceFingerprint json.RawMessage `json:"face_fingerprint"`
+		Fingerprint     json.RawMessage `json:"fingerprint"`
+		Alias           json.RawMessage `json:"alias"`
+		Personality     json.RawMessage `json:"personality"`
+		Demeanor        json.RawMessage `json:"demeanor"`
+		Relations       json.RawMessage `json:"relations"`
+		FirstSeen       json.RawMessage `json:"first_seen"`
 	}
 	var raw rawCharacter
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -80,6 +84,12 @@ func (c *lightweightStoryCharacter) UnmarshalJSON(data []byte) error {
 	}
 	if c.Appearance, err = coerceJSONScalarToString(raw.Appearance); err != nil {
 		return fmt.Errorf("appearance: %w", err)
+	}
+	if c.FaceFingerprint, err = coerceJSONScalarToString(raw.FaceFingerprint); err != nil {
+		return fmt.Errorf("face_fingerprint: %w", err)
+	}
+	if c.Fingerprint, err = coerceJSONScalarToString(raw.Fingerprint); err != nil {
+		return fmt.Errorf("fingerprint: %w", err)
 	}
 	if c.Alias, err = coerceJSONStringSlice(raw.Alias); err != nil {
 		return fmt.Errorf("alias: %w", err)
@@ -547,17 +557,75 @@ func buildEpisodeContinuityHardRules(hasPreviousEpisode bool) string {
 
 func normalizeStoryCharacterRecord(char models.Character) lightweightStoryCharacter {
 	return lightweightStoryCharacter{
-		Name:        strings.TrimSpace(char.Name),
-		Gender:      strings.TrimSpace(char.Gender),
-		Age:         strings.TrimSpace(char.Age),
-		Height:      strings.TrimSpace(char.BodyHeight),
-		Era:         strings.TrimSpace(char.Era),
-		Country:     strings.TrimSpace(char.Country),
-		Appearance:  strings.TrimSpace(char.Appearance),
-		Alias:       parseJSONStringArrayField(char.AliasJSON),
-		Personality: parseJSONStringArrayField(char.PersonalityJSON),
-		Relations:   parseJSONRelationsField(char.RelationsJSON),
+		Name:            strings.TrimSpace(char.Name),
+		Gender:          strings.TrimSpace(char.Gender),
+		Age:             strings.TrimSpace(char.Age),
+		Height:          strings.TrimSpace(char.BodyHeight),
+		Era:             strings.TrimSpace(char.Era),
+		Country:         strings.TrimSpace(char.Country),
+		Appearance:      strings.TrimSpace(char.Appearance),
+		FaceFingerprint: strings.TrimSpace(char.FaceFingerprint),
+		Fingerprint:     strings.TrimSpace(char.Fingerprint),
+		Alias:           parseJSONStringArrayField(char.AliasJSON),
+		Personality:     parseJSONStringArrayField(char.PersonalityJSON),
+		Relations:       parseJSONRelationsField(char.RelationsJSON),
 	}
+}
+
+// deriveLightweightCharacterAnchors 在 LLM 未返回 face_fingerprint / fingerprint 时，
+// 从 appearance 拆解出脸部锚点与非脸部（体态/服装/装备）锚点，保证落库指纹尽量非空。
+// 纯函数便于单测；若 appearance 本身只有脸部描述，体态侧忠实为空。
+func deriveLightweightCharacterAnchors(appearance string) (faceFP string, bodyFP string) {
+	cleaned := strings.TrimSpace(appearance)
+	if cleaned == "" {
+		return "", ""
+	}
+	separators := []string{"。", "，", "、", ",", ";", "；"}
+	normalized := cleaned
+	for _, sep := range separators[1:] {
+		normalized = strings.ReplaceAll(normalized, sep, separators[0])
+	}
+	faceKeywords := []string{
+		"脸", "面容", "五官", "眉", "眼", "眼神", "鼻", "鼻梁", "唇", "嘴唇", "下巴",
+		"颧", "下颌", "肤色", "皮肤", "颊", "耳", "额", "发际", "发型", "刘海", "鬓",
+		"马尾", "发髻", "束发",
+	}
+	bodyKeywords := []string{
+		"身材", "体型", "体态", "身高", "肩", "臂", "腿", "足", "鞋", "帽", "袍", "裙",
+		"裤", "衣", "服", "制服", "饰", "链", "环", "佩", "腰", "带", "剑", "刀", "枪",
+		"棍", "杖", "盾", "甲", "盔", "鞭", "武器", "装备", "披风", "斗篷", "围巾", "脚踏",
+	}
+	faceParts := make([]string, 0, 6)
+	bodyParts := make([]string, 0, 6)
+	for _, part := range strings.Split(normalized, separators[0]) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		switch {
+		case containsAnyKeyword(part, faceKeywords):
+			faceParts = append(faceParts, part)
+		case containsAnyKeyword(part, bodyKeywords):
+			bodyParts = append(bodyParts, part)
+		default:
+			// 无明确归属的识别点（如"约一米八五"）：脸部已有内容时归体态侧，否则先给脸部。
+			if len(faceParts) == 0 {
+				faceParts = append(faceParts, part)
+			} else {
+				bodyParts = append(bodyParts, part)
+			}
+		}
+	}
+	return strings.Join(faceParts, "，"), strings.Join(bodyParts, "，")
+}
+
+func containsAnyKeyword(text string, keywords []string) bool {
+	for _, kw := range keywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 func loadExistingStoryCharacters(projectID uint) ([]models.Character, []lightweightStoryCharacter, error) {
@@ -682,10 +750,10 @@ func buildLightweightStoryPromptsLegacy(project models.Project, req models.AutoG
 5. 本次输出必须完整、稳定、可直接入库，禁止缺字段、缺角色、缺镜头、缺提示词。
 6. 所有字段值必须使用简体中文；只有 video_prompt 的固定标签允许使用英文 Style / Phase / Audio，标签后的正文内容必须使用中文。
 %s
-10. 新角色必须完整生成 name、gender、age、height、era、country、appearance。
+10. 新角色必须完整生成 name、gender、age、height、era、country、appearance、face_fingerprint、fingerprint。
 11. gender 只能返回：男性、女性、其他。
 12. age、height、era、country 都必须明确，禁止模糊词。age 应尽量写成明确年龄，例如“16岁”“24岁”“31岁”；height 必须写成可视化的明确身高表达，例如“一米七二”“约一米八五”，不能只写“高挑”“偏高”“娇小”。
-13. appearance 只写“永久人物锚点”，不写可变服装、不写可变配饰、不写手持物、不写临时动作。appearance 必须清晰包含：发型、脸型、额头与眉骨、眼型、眼距或眼睑特征、鼻梁与鼻尖、唇形与下巴、颧骨或下颌线、肤色、身材比例、明确身高、明确年龄、可见年龄锚点、国别或文化、特征识别点。发型必须写清长度、分线、颜色、卷直程度、刘海形态、发量或蓬松度、是否束发，以及发际线或鬓角特征。年龄不能只停留在数字字段，也不能只写“青年感、少女感、成熟感、中年感”这类模糊词；appearance 里必须把年龄落实成模型能看见的线索，例如面颊饱满度、眼下状态、法令纹深浅、下颌紧致度、颈部状态或体态年龄感。只要是成年人男性且当前或后续镜头可能看见下半张脸，appearance 里还必须明确胡须状态，例如下巴干净无胡须、上唇无胡茬，或胡须样式固定为何种状态。国别或文化身份要优先使用模型更容易稳定理解的表达，例如中国女性、中国古代男性、东亚女性，不要把“华夏青年女性”这类宽泛文学化身份词当成核心人物锚点。appearance 同时是后续所有 scene 复用的固定身份块，后续 scene 的永久人物锚点部分必须尽量沿用 appearance 的原有关键词和顺序，不要改写成同义词。
+13. appearance 只写“永久人物锚点”，不写可变服装、不写可变配饰、不写手持物、不写临时动作。appearance 必须清晰包含：发型、脸型、额头与眉骨、眼型、眼距或眼睑特征、鼻梁与鼻尖、唇形与下巴、颧骨或下颌线、肤色、身材比例、明确身高、明确年龄、可见年龄锚点、国别或文化、特征识别点。发型必须写清长度、分线、颜色、卷直程度、刘海形态、发量或蓬松度、是否束发，以及发际线或鬓角特征。年龄不能只停留在数字字段，也不能只写“青年感、少女感、成熟感、中年感”这类模糊词；appearance 里必须把年龄落实成模型能看见的线索，例如面颊饱满度、眼下状态、法令纹深浅、下颌紧致度、颈部状态或体态年龄感。只要是成年人男性且当前或后续镜头可能看见下半张脸，appearance 里还必须明确胡须状态，例如下巴干净无胡须、上唇无胡茬，或胡须样式固定为何种状态。国别或文化身份要优先使用模型更容易稳定理解的表达，例如中国女性、中国古代男性、东亚女性，不要把“华夏青年女性”这类宽泛文学化身份词当成核心人物锚点。appearance 同时是后续所有 scene 复用的固定身份块，后续 scene 的永久人物锚点部分必须尽量沿用 appearance 的原有关键词和顺序，不要改写成同义词。face_fingerprint 单独复用 appearance 里的脸部与基础发型关键词，作为脸部锁定锚点。fingerprint 单独写非脸部的体态、固定服装与稳定装备锚点：身材、体态、肩背腿比例；剧情中长期固定的服装（职业装、制服、固定穿搭）写清颜色、材质或版型；长期佩戴的饰品与常备装备只写佩戴、腰悬、背负、入鞘等稳定状态；禁止写临时换装、临时手持物与临时动作；确实没有固定服装与装备时，也必须至少写清身材体态与肩背腿比例，禁止留空。
 14. 角色脸部禁止模板化。你必须主动拉开同一集角色之间的脸部结构差异，禁止批量生成“窄脸、高鼻梁、薄唇、冷白皮、狭长眼”这类重复模板脸；必须让每个角色拥有可区分的额头、眉骨、眼距、眼尾、鼻型、唇厚、下巴或颧骨差异。若是同国别、同年龄层、同性别角色，至少主动拉开五个脸部维度，不能只靠发型、妆感或服装区分。
 15. scenes 必须先服务“完整讲清故事”，再服务导演式 visual coverage。你必须先提取完整故事主线、人物关系变化、人物目标变化、因果链、关键转折与结果，再把剧情重组为连续 story beats，最后按导演视角拆分 scene；禁止只抽取燃点导致故事不通，禁止平淡过渡镜头。
 16. scene 数量必须由故事完整度、旁白长度、中文语气停顿、信息密度、镜头功能和视频承载能力共同决定，不允许预设固定镜头数；你必须先完成一轮候选 scene 的 narration 草稿与内部试讲，再根据试讲结果确定最终 total_scenes；如果一个镜头讲不完，就继续拆分新的 scene，直到故事整体通畅。
@@ -2062,6 +2130,14 @@ func persistLightweightStoryPayload(projectID uint, req models.AutoGenerateReque
 				continue
 			}
 
+			faceFingerprint, fingerprint := deriveLightweightCharacterAnchors(character.Appearance)
+			if v := strings.TrimSpace(character.FaceFingerprint); v != "" {
+				faceFingerprint = v
+			}
+			if v := strings.TrimSpace(character.Fingerprint); v != "" {
+				fingerprint = v
+			}
+
 			record := models.Character{
 				ProjectID:        projectID,
 				Name:             character.Name,
@@ -2076,8 +2152,8 @@ func persistLightweightStoryPayload(projectID uint, req models.AutoGenerateReque
 				RelationsJSON:    marshalJSONField(character.Relations),
 				IsLocked:         true,
 				Description:      character.Appearance,
-				FaceFingerprint:  "",
-				Fingerprint:      "",
+				FaceFingerprint:  faceFingerprint,
+				Fingerprint:      fingerprint,
 				PositivePrompt:   "",
 				NegativePrompt:   "",
 				Width:            0,

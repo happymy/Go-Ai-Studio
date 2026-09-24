@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -116,6 +117,120 @@ func TestNormalizeStoryCharacterRecordRoundTrip(t *testing.T) {
 	plain := normalizeStoryCharacterRecord(models.Character{Name: "李三", Appearance: "矮胖掌柜"})
 	if plain.Alias != nil || plain.Personality != nil || plain.Relations != nil {
 		t.Errorf("legacy record should fall back to nil fields, got %+v", plain)
+	}
+}
+
+// 一键转剧本新角色必须携带 face_fingerprint / fingerprint（体态/服装/装备锚点），
+// 否则生图与跨集复用拿不到稳定体态服装锚点（回归保护：曾全部为空）。
+func TestLightweightStoryCharacterUnmarshalFingerprint(t *testing.T) {
+	input := []byte(`{
+		"name": "苏橙",
+		"gender": "女性",
+		"age": "24岁",
+		"height": "约一米七二",
+		"era": "现代",
+		"country": "中国",
+		"appearance": "黑色长直发偏中分，鹅蛋脸，眉眼清冷，鼻梁高挺",
+		"face_fingerprint": "鹅蛋脸，眉眼清冷，鼻梁高挺，黑色长直发偏中分",
+		"fingerprint": "体态挺拔的年轻女性，穿白色护士制服，腰间佩工作卡套，白色护士鞋"
+	}`)
+	var ch lightweightStoryCharacter
+	if err := json.Unmarshal(input, &ch); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if ch.FaceFingerprint != "鹅蛋脸，眉眼清冷，鼻梁高挺，黑色长直发偏中分" {
+		t.Errorf("face_fingerprint not parsed: %q", ch.FaceFingerprint)
+	}
+	if ch.Fingerprint != "体态挺拔的年轻女性，穿白色护士制服，腰间佩工作卡套，白色护士鞋" {
+		t.Errorf("fingerprint not parsed: %q", ch.Fingerprint)
+	}
+
+	// 旧输出不含新字段时保持向后兼容
+	var legacy lightweightStoryCharacter
+	if err := json.Unmarshal([]byte(`{"name":"李三","appearance":"矮胖掌柜"}`), &legacy); err != nil {
+		t.Fatalf("legacy unmarshal failed: %v", err)
+	}
+	if legacy.FaceFingerprint != "" || legacy.Fingerprint != "" {
+		t.Errorf("legacy output should keep empty anchors, got face=%q fp=%q", legacy.FaceFingerprint, legacy.Fingerprint)
+	}
+}
+
+// 落库时 LLM 未返回锚点时，从 appearance 兜底拆解脸部与非脸部锚点，保证非空。
+func TestDeriveLightweightCharacterAnchors(t *testing.T) {
+	cases := []struct {
+		name         string
+		appearance   string
+		wantFaceSub  string
+		wantBodySub  string
+		wantBodySome bool
+	}{
+		{
+			name:         "混合脸部与体态服装句",
+			appearance:   "黑色长直发偏中分，鹅蛋脸，眉眼清冷，身材高挑，穿白色护士制服，白色护士鞋",
+			wantFaceSub:  "鹅蛋脸",
+			wantBodySub:  "白色护士制服",
+			wantBodySome: true,
+		},
+		{
+			name:         "身高体态句归体态",
+			appearance:   "短发，脸型偏方，约一米八五，肩背挺直",
+			wantFaceSub:  "脸型偏方",
+			wantBodySub:  "约一米八五",
+			wantBodySome: true,
+		},
+		{
+			name:         "纯脸部描述时体态可为空但脸部非空",
+			appearance:   "短发刚修剪过，脸型偏方，眉骨清晰，鼻梁挺直，下巴线条平直",
+			wantFaceSub:  "眉骨清晰",
+			wantBodySome: false,
+		},
+		{
+			name:         "空串返回双空",
+			appearance:   "",
+			wantFaceSub:  "",
+			wantBodySub:  "",
+			wantBodySome: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			faceFP, bodyFP := deriveLightweightCharacterAnchors(tc.appearance)
+			if tc.wantFaceSub != "" && !strings.Contains(faceFP, tc.wantFaceSub) {
+				t.Errorf("face anchor missing %q, got %q", tc.wantFaceSub, faceFP)
+			}
+			if tc.wantBodySub != "" && !strings.Contains(bodyFP, tc.wantBodySub) {
+				t.Errorf("body anchor missing %q, got %q", tc.wantBodySub, bodyFP)
+			}
+			hasBody := bodyFP != ""
+			if tc.wantBodySome && !hasBody {
+				t.Errorf("expected non-empty body anchor, got %q", bodyFP)
+			}
+			if !tc.wantBodySome && hasBody {
+				t.Errorf("expected empty body anchor, got %q", bodyFP)
+			}
+			// 脸部兜底不得为空（有 appearance 时）
+			if tc.appearance != "" && faceFP == "" {
+				t.Errorf("face anchor should not be empty for non-empty appearance, got %q", faceFP)
+			}
+		})
+	}
+}
+
+// normalizeStoryCharacterRecord 续写注入旧角色时必须带上已锁定的锚点，
+// 否则跨集续写会再次丢失体态/服装/装备锚点。
+func TestNormalizeStoryCharacterRecordFingerprintRoundTrip(t *testing.T) {
+	record := models.Character{
+		Name:            "苏橙",
+		Appearance:      "黑色长直发偏中分，鹅蛋脸",
+		FaceFingerprint: "鹅蛋脸，眉眼清冷",
+		Fingerprint:     "穿白色护士制服，白色护士鞋",
+	}
+	ch := normalizeStoryCharacterRecord(record)
+	if ch.FaceFingerprint != "鹅蛋脸，眉眼清冷" {
+		t.Errorf("face_fingerprint round-trip failed: %q", ch.FaceFingerprint)
+	}
+	if ch.Fingerprint != "穿白色护士制服，白色护士鞋" {
+		t.Errorf("fingerprint round-trip failed: %q", ch.Fingerprint)
 	}
 }
 

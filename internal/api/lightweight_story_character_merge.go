@@ -212,13 +212,16 @@ func mergeLightweightStoryCharacters(payload *lightweightStoryResponse, existing
 func buildCharacterAssetRules() string {
 	return strings.TrimSpace(`
 【人物资产填写规范】
-- characters 只返回本集首次登场的新角色；每个新角色必须包含 name、gender、age、height、era、country、appearance，并尽量填写：
+- characters 只返回本集首次登场的新角色；每个新角色必须包含 name、gender、age、height、era、country、appearance、face_fingerprint、fingerprint，并尽量填写：
   · personality：3 个以内的性格标签数组，如 ["外冷内热","重诺","寡言"]
   · demeanor：1 句以内的习惯动作或口头禅，可空
   · relations：只写与既有角色或同集角色的明确关系，如 [{"name":"李三","type":"旧识"}]，可空
   · first_seen：该角色本集首次出现的 scene_id，可空
 - 若新角色与 existing_characters 中某角色是同一人（名字写法、称呼、别名的差异都算），必须把它当既有角色使用：沿用其 name 与 appearance 锚点，禁止另写一份外观，禁止重复放进 characters。
-- appearance 只写永久锚点（体态、发色、脸型、标志性特征），不写服装、持物、伤口与临时状态。`)
+- 三个锚点字段分工：
+  · appearance 只写永久脸部与身材锚点（发型、脸型、五官、肤色、身材比例、身高、年龄、国别或文化、特征识别点），不写服装、不写配饰、不写手持物、不写伤口与临时状态。
+  · face_fingerprint 单独复用 appearance 里的脸部与基础发型关键词，作为脸部锁定锚点，不写服装与装备。
+  · fingerprint 单独写非脸部的体态、固定服装与稳定装备锚点：身材、体态、肩背腿比例等；剧情中长期固定的服装（职业装、制服、固定穿搭）必须写清颜色、材质或版型；长期佩戴的饰品与常备装备只写佩戴、腰悬、背负、入鞘等稳定状态。禁止写临时换装、临时手持物、临时伤口与临时动作；确实没有固定服装与装备时，也必须至少写清身材体态与肩背腿比例，禁止留空。`)
 }
 
 // marshalJSONField 把值序列化为 JSON 字符串（DB 扩展列用）；空值或序列化失败返回空串。
