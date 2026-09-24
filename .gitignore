@@ -17,3 +17,9 @@ _local_release_clean/
 
 # Frontend dependencies
 frontend/node_modules/
+
+# Local artifacts & workflow backups (user excluded, never commit)
+Go-Ai-Studio.exe
+workflows - 副本/
+workflows/bak/
+workflows/bak01/
