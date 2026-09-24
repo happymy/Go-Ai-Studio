@@ -253,6 +253,11 @@ func TestParseNovelToScriptOutlineErrors(t *testing.T) {
 			json: `{"plot_line":"主线","characters":[{"name":"张三"}],"scene_plan":[{"scene_id":1,"location":"某处","cast":[],"core_event":"a"},{"scene_id":1,"location":"别处","cast":[],"core_event":"b"}]}`,
 			want: "is duplicated",
 		},
+		{
+			name: "scene id not contiguous",
+			json: `{"plot_line":"主线","characters":[{"name":"张三"}],"scene_plan":[{"scene_id":1,"location":"某处","cast":[],"core_event":"a"},{"scene_id":3,"location":"别处","cast":[],"core_event":"b"}]}`,
+			want: "not contiguous",
+		},
 	}
 
 	for _, tc := range cases {
@@ -265,5 +270,49 @@ func TestParseNovelToScriptOutlineErrors(t *testing.T) {
 				t.Errorf("expected error containing %q, got %q", tc.want, err.Error())
 			}
 		})
+	}
+}
+
+func TestVerifyNovelScriptAgainstOutline(t *testing.T) {
+	outline := lightweightNovelOutline{
+		ScenePlan: []lightweightNovelOutlineScenePlan{
+			{SceneID: 1, Location: "客栈 内 夜", Cast: []string{"沈西风"}, CoreEvent: "a"},
+			{SceneID: 2, Location: "客栈 内 夜", Cast: []string{"沈西风"}, CoreEvent: "b"},
+		},
+	}
+
+	// 一致：2 场剧本对应 2 场大纲 → 通过
+	ok := lightweightNovelScriptResult{
+		TotalScenes: 2,
+		Scenes: []lightweightNovelScriptScene{
+			{SceneID: 1, Location: "客栈 内 夜", Cast: []string{"沈西风"}, Summary: "s"},
+			{SceneID: 2, Location: "客栈 内 夜", Cast: []string{"沈西风"}, Summary: "s"},
+		},
+	}
+	if err := verifyNovelScriptAgainstOutline(outline, &ok); err != nil {
+		t.Errorf("matching outline should pass: %v", err)
+	}
+
+	// 少一场 → 报错（LLM 漏场）
+	tooFew := lightweightNovelScriptResult{
+		TotalScenes: 1,
+		Scenes: []lightweightNovelScriptScene{
+			{SceneID: 1, Location: "客栈 内 夜", Cast: []string{"沈西风"}, Summary: "s"},
+		},
+	}
+	if err := verifyNovelScriptAgainstOutline(outline, &tooFew); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Errorf("scene count mismatch should be rejected, got %v", err)
+	}
+
+	// 数量相等但 scene_id 不在大纲（纯函数防御，绕过 parse 直接构造）
+	unknown := lightweightNovelScriptResult{
+		TotalScenes: 2,
+		Scenes: []lightweightNovelScriptScene{
+			{SceneID: 1, Location: "客栈 内 夜", Cast: []string{"沈西风"}, Summary: "s"},
+			{SceneID: 3, Location: "客栈 内 夜", Cast: []string{"沈西风"}, Summary: "s"},
+		},
+	}
+	if err := verifyNovelScriptAgainstOutline(outline, &unknown); err == nil || !strings.Contains(err.Error(), "not found in outline") {
+		t.Errorf("unknown scene_id should be rejected, got %v", err)
 	}
 }

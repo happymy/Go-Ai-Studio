@@ -1419,7 +1419,7 @@ func mergeLightweightStoryContinuation(partial *lightweightStoryPartialContext, 
 	}
 	if tail == nil {
 		return &lightweightStoryResponse{
-			TotalScenes:   partial.TotalScenes,
+			TotalScenes:   len(partial.Scenes),
 			Characters:    append([]lightweightStoryCharacter{}, partial.Characters...),
 			Scenes:        append([]lightweightStoryScene{}, partial.Scenes...),
 			EpisodeMemory: emptyEpisodeMemory(),
@@ -1441,9 +1441,11 @@ func mergeLightweightStoryContinuation(partial *lightweightStoryPartialContext, 
 		if name == "" {
 			continue
 		}
-		if _, exists := charactersByName[name]; !exists {
-			order = append(order, name)
+		if _, exists := charactersByName[name]; exists {
+			// 续写契约：partial 为已确认定稿，同名角色以定稿为准（tail 重写不生效）。
+			continue
 		}
+		order = append(order, name)
 		charactersByName[name] = char
 	}
 	mergedCharacters := make([]lightweightStoryCharacter, 0, len(order))
@@ -1469,9 +1471,17 @@ func mergeLightweightStoryContinuation(partial *lightweightStoryPartialContext, 
 		if scene.SceneID <= 0 {
 			continue
 		}
-		if _, exists := sceneByID[scene.SceneID]; !exists {
-			ids = append(ids, scene.SceneID)
+		if _, exists := sceneByID[scene.SceneID]; exists {
+			// 续写契约：partial 为已确认定稿，tail 违规重复返回已完成场景
+			// 时以定稿为准（静默覆盖会替换确认内容与丢失字段）。
+			Log(
+				LogLevelWarn,
+				"续写合并",
+				fmt.Sprintf("续写响应重复返回已确认场景 scene_id=%d，保留续写前定稿", scene.SceneID),
+			)
+			continue
 		}
+		ids = append(ids, scene.SceneID)
 		sceneByID[scene.SceneID] = scene
 	}
 	sort.Ints(ids)
@@ -1485,13 +1495,9 @@ func mergeLightweightStoryContinuation(partial *lightweightStoryPartialContext, 
 		mergedScenes = append(mergedScenes, sceneByID[id])
 	}
 
-	totalScenes := tail.TotalScenes
-	if totalScenes == 0 {
-		totalScenes = partial.TotalScenes
-	}
-	if totalScenes == 0 {
-		totalScenes = len(mergedScenes)
-	}
+	// total_scenes 严格以合并后实际场景数为准：partial/tail 的声明可能虚报，
+	// validate 不校验 total_scenes 与 len(scenes) 一致性，入库需自重保证自洽。
+	totalScenes := len(mergedScenes)
 
 	return &lightweightStoryResponse{
 		TotalScenes:   totalScenes,

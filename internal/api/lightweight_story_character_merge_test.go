@@ -321,3 +321,59 @@ func TestParseJSONRelationsField(t *testing.T) {
 		t.Errorf("non-array dirty should return nil, got %v", got)
 	}
 }
+
+// 续写合并契约：partial 为已确认定稿（禁止重写）、tail 只补缺；total_scenes 以实际场景数为准。
+func TestMergeLightweightStoryContinuation(t *testing.T) {
+	partial := &lightweightStoryPartialContext{
+		TotalScenes: 5, // 声明 5，但实际仅确认 2 场（流中断）
+		Characters:  []lightweightStoryCharacter{{Name: "沈西风", Appearance: "灰衣剑客"}},
+		Scenes: []lightweightStoryScene{
+			{SceneID: 1, Narration: "定稿场1"},
+			{SceneID: 2, Narration: "定稿场2"},
+		},
+	}
+	tail := &lightweightStoryResponse{
+		TotalScenes: 3, // 虚报，实际合并后场景数为 4
+		Characters: []lightweightStoryCharacter{
+			{Name: "沈西风", Appearance: "重写外观（应被忽略）"},
+			{Name: "李三"},
+		},
+		Scenes: []lightweightStoryScene{
+			{SceneID: 2, Narration: "重复场2（应被忽略）"},
+			{SceneID: 3, Narration: "补场3"},
+			{SceneID: 4, Narration: "补场4"},
+		},
+		EpisodeMemory: emptyEpisodeMemory(),
+	}
+
+	merged := mergeLightweightStoryContinuation(partial, tail)
+	if len(merged.Scenes) != 4 {
+		t.Fatalf("expected 4 merged scenes, got %d", len(merged.Scenes))
+	}
+	if merged.TotalScenes != 4 {
+		t.Errorf("total_scenes should equal actual scene count 4, got %d", merged.TotalScenes)
+	}
+	if merged.Scenes[1].Narration != "定稿场2" {
+		t.Errorf("tail must not overwrite confirmed scene 2, got %q", merged.Scenes[1].Narration)
+	}
+	if len(merged.Characters) != 2 {
+		t.Fatalf("expected 2 merged characters, got %d", len(merged.Characters))
+	}
+	for _, ch := range merged.Characters {
+		if ch.Name == "沈西风" && ch.Appearance != "灰衣剑客" {
+			t.Errorf("tail must not overwrite confirmed character 沈西风, got appearance %q", ch.Appearance)
+		}
+	}
+
+	// tail == nil：仅返回 partial，total_scenes 以实际场数为准
+	partialOnly := mergeLightweightStoryContinuation(partial, nil)
+	if partialOnly.TotalScenes != 2 || len(partialOnly.Scenes) != 2 {
+		t.Errorf("partial-only total should equal its scene count, got %d/%d", partialOnly.TotalScenes, len(partialOnly.Scenes))
+	}
+
+	// partial == nil：原样返回 tail
+	noPartial := mergeLightweightStoryContinuation(nil, tail)
+	if noPartial != tail {
+		t.Errorf("nil partial should return tail as-is")
+	}
+}

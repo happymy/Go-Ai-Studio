@@ -229,6 +229,7 @@ func parseNovelToScriptOutline(raw string) (*lightweightNovelOutline, error) {
 		return nil, fmt.Errorf("scene_plan must not be empty")
 	}
 	seenSceneIDs := make(map[int]struct{}, len(payload.ScenePlan))
+	expectedSceneID := 1
 	for i := range payload.ScenePlan {
 		sp := &payload.ScenePlan[i]
 		sp.Location = strings.TrimSpace(sp.Location)
@@ -241,6 +242,12 @@ func parseNovelToScriptOutline(raw string) (*lightweightNovelOutline, error) {
 			return nil, fmt.Errorf("scene_plan scene_id %d is duplicated", sp.SceneID)
 		}
 		seenSceneIDs[sp.SceneID] = struct{}{}
+		if sp.SceneID != expectedSceneID {
+			// 与第二段 parseNovelToScript 的连续约束保持一致，
+			// 避免大纲漏编号时第一段"成功"、第二段必然失败且不可修复。
+			return nil, fmt.Errorf("scene_plan scene_id %d is not contiguous (expected %d)", sp.SceneID, expectedSceneID)
+		}
+		expectedSceneID++
 		if sp.Location == "" {
 			return nil, fmt.Errorf("scene_plan scene %d location is required", sp.SceneID)
 		}
@@ -370,6 +377,25 @@ func parseNovelToScript(raw string) (*lightweightNovelScriptResult, error) {
 	return &payload, nil
 }
 
+// verifyNovelScriptAgainstOutline 校验第二段剧本与第一段大纲一致：
+// 场景数与 scene_id 集合必须完全吻合（两段都已强制从 1 连续唯一，数相等即集合相等），
+// 避免 LLM 少场/多场/改号导致"产出剧本与大纲不符"却照常通过。
+func verifyNovelScriptAgainstOutline(outline lightweightNovelOutline, result *lightweightNovelScriptResult) error {
+	if len(result.Scenes) != len(outline.ScenePlan) {
+		return fmt.Errorf("scenes count %d does not match outline scene_plan %d", len(result.Scenes), len(outline.ScenePlan))
+	}
+	planIDs := make(map[int]struct{}, len(outline.ScenePlan))
+	for _, sp := range outline.ScenePlan {
+		planIDs[sp.SceneID] = struct{}{}
+	}
+	for _, sc := range result.Scenes {
+		if _, ok := planIDs[sc.SceneID]; !ok {
+			return fmt.Errorf("scene_id %d not found in outline scene_plan", sc.SceneID)
+		}
+	}
+	return nil
+}
+
 // runNovelToScript 小说转剧本编排：第一段产出大纲，第二段依大纲逐场展开。
 // 两段产物都会落日志，第二段产物经过 parseNovelToScript 强校验后才返回。
 func runNovelToScript(title string, novelText string, provider models.LLMProvider, taskID string) (*lightweightNovelScriptResult, error) {
@@ -455,6 +481,15 @@ func runNovelToScript(title string, novelText string, provider models.LLMProvide
 		Log(
 			LogLevelError,
 			llmLogMessage("LLM 返回解析失败(小说转剧本 初稿)", provider),
+			err.Error(),
+		)
+		return nil, err
+	}
+
+	if err := verifyNovelScriptAgainstOutline(*outline, result); err != nil {
+		Log(
+			LogLevelError,
+			llmLogMessage("LLM 初稿与大纲不符(小说转剧本)", provider),
 			err.Error(),
 		)
 		return nil, err
