@@ -104,7 +104,14 @@ func runLightweightStoryGenerationWithRetry(
 			// 校验通过但质量后检发现问题（如台词缺失）→ 同样进入修复重试。
 			if issues := postQualityCheck(payload); len(issues) > 0 {
 				if attempt >= maxAttempts {
-					break
+					// 最后一次尝试：质量后检问题（如台词缺失）属软信号，
+					// 由质量报告标注，不升级为整集失败，避免丢弃合法产物。
+					Log(
+						LogLevelWarn,
+						"质量后检未完全修复",
+						fmt.Sprintf("第 %d 次尝试后仍存在 %d 项质量提示，接受当前结果：%v", attempt+1, len(issues), issues),
+					)
+					return payload, currentUserPrompt, nil
 				}
 				issueMessages = issues
 			}
@@ -119,7 +126,7 @@ func runLightweightStoryGenerationWithRetry(
 		Log(
 			LogLevelWarn,
 			"自动修复重试",
-			fmt.Sprintf("attempt %d/%d：%v", attempt+1, maxAttempts, issueMessages),
+			fmt.Sprintf("第 %d 次尝试未通过，将进行第 %d 次重试（上限 %d）：%v", attempt+1, attempt+2, maxAttempts, issueMessages),
 		)
 		currentUserPrompt = currentUserPrompt + "\n\n" + fixInstruction
 	}

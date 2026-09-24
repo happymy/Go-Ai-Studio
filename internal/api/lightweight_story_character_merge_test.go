@@ -106,11 +106,22 @@ func TestLightweightStoryCharacterUnmarshalNewFields(t *testing.T) {
 		t.Errorf("single personality parse failed: %v", ch2.Personality)
 	}
 
-	// relations 非法（数字）应报错
+	// relations 非数组形态（数字/字符串/对象）容错忽略，不阻塞解析（与 alias/personality 一致）
 	rawBad := `{"name":"张三","relations":123}`
 	var ch3 lightweightStoryCharacter
-	if err := json.Unmarshal([]byte(rawBad), &ch3); err == nil {
-		t.Errorf("expected error for invalid relations")
+	if err := json.Unmarshal([]byte(rawBad), &ch3); err != nil {
+		t.Fatalf("unmarshal with non-array relations should be tolerated, got %v", err)
+	}
+	if len(ch3.Relations) != 0 {
+		t.Errorf("invalid relations should be ignored, got %v", ch3.Relations)
+	}
+	rawBadStr := `{"name":"李四","relations":"李三是旧识"}`
+	var ch4 lightweightStoryCharacter
+	if err := json.Unmarshal([]byte(rawBadStr), &ch4); err != nil {
+		t.Fatalf("unmarshal with string relations should be tolerated, got %v", err)
+	}
+	if len(ch4.Relations) != 0 {
+		t.Errorf("string relations should be ignored, got %v", ch4.Relations)
 	}
 }
 
@@ -231,8 +242,18 @@ func TestMergeLightweightStoryCharacters(t *testing.T) {
 				if len(ch.Personality) != 2 {
 					t.Errorf("merged personality should be deduped union, got %v", ch.Personality)
 				}
-				if len(ch.Alias) != 2 {
-					t.Errorf("merged alias should be deduped union, got %v", ch.Alias)
+				// 被合并的异写名"张 三"应收入 Alias（含原 alias 并集去重）
+				if len(ch.Alias) != 3 {
+					t.Errorf("merged alias should contain deduped union + merged name, got %v", ch.Alias)
+				}
+				hasMergedName := false
+				for _, alias := range ch.Alias {
+					if alias == "张 三" {
+						hasMergedName = true
+					}
+				}
+				if !hasMergedName {
+					t.Errorf("expected merged name 张 三 in alias, got %v", ch.Alias)
 				}
 			}
 		})

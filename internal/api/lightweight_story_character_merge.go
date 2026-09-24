@@ -180,6 +180,10 @@ func mergeLightweightStoryCharacters(payload *lightweightStoryResponse, existing
 				"人物归并",
 				fmt.Sprintf("新角色 %q 与本集角色 %q 规范化同名(%q)，合并为一个", ch.Name, target.Name, canonical),
 			)
+			// 被合并的异写名（去空白/全半角后相同）一并收进 Alias，便于后续集提示词锚定。
+			if ch.Name != target.Name {
+				target.Alias = mergeUniqueStrings(target.Alias, []string{ch.Name})
+			}
 			target.Alias = mergeUniqueStrings(target.Alias, ch.Alias)
 			target.Personality = mergeUniqueStrings(target.Personality, ch.Personality)
 			target.Relations = mergeUniqueRelations(target.Relations, ch.Relations)

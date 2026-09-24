@@ -159,16 +159,22 @@ func buildLightweightStoryQualityReport(payload *lightweightStoryResponse, exist
 	}
 	report.GhostCharacters = checkGhostCharacters(payload.Scenes, knownNames)
 
-	// 结构 40：scene 连续性 / 时长合法 / 戏剧卡 objective 覆盖率
+	// 结构 40：scene_id 覆盖 1..N 完整性 / 时长合法 / 戏剧卡 objective 覆盖率
+	// 注：LLM 返回的数组顺序可能乱序（persist 前会按 scene_id 排序），
+	// 因此不按数组下标判连续，只检查 id 集合是否覆盖 1..N（缺号才扣分）。
 	structure := 40
 	if len(payload.Scenes) == 0 {
 		structure = 0
 		report.Issues = append(report.Issues, "结构：scenes 为空")
 	} else {
-		for i, scene := range payload.Scenes {
-			if scene.SceneID != i+1 {
+		seenSceneIDs := make(map[int]struct{}, len(payload.Scenes))
+		for _, scene := range payload.Scenes {
+			seenSceneIDs[scene.SceneID] = struct{}{}
+		}
+		for id := 1; id <= len(payload.Scenes); id++ {
+			if _, ok := seenSceneIDs[id]; !ok {
 				structure -= 10
-				report.Issues = append(report.Issues, fmt.Sprintf("结构：scene_id 不连续（第 %d 个为 %d）", i+1, scene.SceneID))
+				report.Issues = append(report.Issues, fmt.Sprintf("结构：scene_id 缺号 %d（应覆盖 1..%d）", id, len(payload.Scenes)))
 				break
 			}
 		}

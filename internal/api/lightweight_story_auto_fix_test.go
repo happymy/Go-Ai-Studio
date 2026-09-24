@@ -208,3 +208,39 @@ func TestRunLightweightStoryGenerationWithRetryDialogueLossTriggersRetry(t *test
 		t.Errorf("expected fixed dialogue, got %+v", payload.Scenes)
 	}
 }
+
+// 回归保护：台词缺失属软信号（质量报告标注），末次尝试仍未修复时必须接受结果返回成功，
+// 不得升级为整集失败丢弃合法产物（曾出现的回归：retry exhausted → 调用方 return nil, err）。
+func TestRunLightweightStoryGenerationWithRetryQualityIssueExhaustedStillSucceeds(t *testing.T) {
+	const missingDialogue = `{
+		"total_scenes": 1,
+		"characters": [{"name": "沈西风"}],
+		"scenes": [{"scene_id": 1, "duration_seconds": 5, "narration": "沈西风看着窗外", "image_prompt": "img", "video_prompt": "沈西风沉默"}],
+		"episode_memory": {"story_summary": "s"}
+	}`
+	responses := []string{missingDialogue, missingDialogue, missingDialogue}
+	requestCount := 0
+	requestOnce := func(system string, user string) (string, error) {
+		requestCount++
+		return responses[requestCount-1], nil
+	}
+	parseOnce := func(raw string) (*lightweightStoryResponse, error) {
+		return parseStrictLightweightStoryResponse(raw)
+	}
+	validate := func(p *lightweightStoryResponse) error {
+		return validateLightweightStoryResponse(p, nil, AutoGenerateModeHighQuality, 0)
+	}
+	postQuality := func(p *lightweightStoryResponse) []string {
+		return checkDialogueCoverage("王五说：“李三在哪？”", p.Scenes)
+	}
+	payload, _, err := runLightweightStoryGenerationWithRetry("sys", "user", nil, requestOnce, parseOnce, validate, postQuality, 3)
+	if err != nil {
+		t.Fatalf("expected success even when quality issue persists at last attempt, got %v", err)
+	}
+	if requestCount != 3 {
+		t.Errorf("expected 3 requests (retries exhausted), got %d", requestCount)
+	}
+	if len(payload.Scenes) != 1 {
+		t.Errorf("expected payload returned, got %+v", payload.Scenes)
+	}
+}

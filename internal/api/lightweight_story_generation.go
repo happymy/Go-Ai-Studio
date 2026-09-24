@@ -93,9 +93,11 @@ func (c *lightweightStoryCharacter) UnmarshalJSON(data []byte) error {
 	if raw.Relations != nil {
 		var rels []lightweightStoryCharacterRelation
 		if err := json.Unmarshal(raw.Relations, &rels); err != nil {
-			return fmt.Errorf("relations: %w", err)
+			// 可选字段容错：非数组形态（字符串/对象）时忽略，不阻塞解析（与 alias/personality 一致）。
+			Log(LogLevelWarn, "人物关系字段非数组，忽略", string(raw.Relations))
+		} else {
+			c.Relations = rels
 		}
-		c.Relations = rels
 	}
 	if c.FirstSeen, err = coerceJSONScalarToString(raw.FirstSeen); err != nil {
 		return fmt.Errorf("first_seen: %w", err)
@@ -1793,7 +1795,6 @@ func validateLightweightStoryResponse(payload *lightweightStoryResponse, existin
 	payload.Characters = newCharacters
 
 	sceneIDs := make(map[int]struct{}, len(payload.Scenes))
-	expectedSceneID := 1
 	isH3Short := normalizeAutoGenerateGenerationMode(generationMode, false) == AutoGenerateModeH3Short
 	for _, scene := range payload.Scenes {
 		if scene.SceneID <= 0 {
@@ -1803,7 +1804,6 @@ func validateLightweightStoryResponse(payload *lightweightStoryResponse, existin
 			return fmt.Errorf("duplicate scene_id: %d", scene.SceneID)
 		}
 		sceneIDs[scene.SceneID] = struct{}{}
-		expectedSceneID++
 
 		if scene.DurationSeconds <= 0 {
 			return fmt.Errorf("scene %d duration_seconds must be greater than 0", scene.SceneID)

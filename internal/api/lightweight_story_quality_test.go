@@ -148,6 +148,60 @@ func TestBuildLightweightStoryQualityReportCatchesProblems(t *testing.T) {
 	}
 }
 
+// scene_id 覆盖 1..N 完整性：LLM 数组乱序（如 [2,1]）不扣分（persist 前会按 id 排序），缺号才扣分。
+func TestBuildLightweightStoryQualityReportSceneIDCompleteness(t *testing.T) {
+	baseScenes := func(ids ...int) []lightweightStoryScene {
+		scenes := make([]lightweightStoryScene, 0, len(ids))
+		for _, id := range ids {
+			scenes = append(scenes, lightweightStoryScene{
+				SceneID:         id,
+				DurationSeconds: 5,
+				Narration:       "王五说今晚打烊",
+				ImagePrompt:     "客栈夜",
+				VideoPrompt:     "王五说今晚打烊，随后将门板一块块合上",
+				Objective:       "收摊",
+				Turn:            "沈西风进来",
+				Location:        "客栈内夜",
+				Characters:      []string{"王五"},
+			})
+		}
+		return scenes
+	}
+
+	// 乱序但完整（1,3,2）→ 不因顺序扣结构分
+	outOfOrder := &lightweightStoryResponse{
+		TotalScenes: 3,
+		Characters:  []lightweightStoryCharacter{{Name: "王五"}},
+		Scenes:      baseScenes(1, 3, 2),
+	}
+	report := buildLightweightStoryQualityReport(outOfOrder, nil, "王五说：“今晚打烊。”")
+	for _, issue := range report.Issues {
+		if strings.Contains(issue, "scene_id") {
+			t.Errorf("out-of-order but complete scene ids should not be penalized: %v", report.Issues)
+		}
+	}
+
+	// 缺号（1,2,4，覆盖 1..3 缺 3）→ 结构扣 10 分并给出缺号提示
+	gap := &lightweightStoryResponse{
+		TotalScenes: 3,
+		Characters:  []lightweightStoryCharacter{{Name: "王五"}},
+		Scenes:      baseScenes(1, 2, 4),
+	}
+	report2 := buildLightweightStoryQualityReport(gap, nil, "王五说：“今晚打烊。”")
+	if report2.Structure != 30 {
+		t.Errorf("missing scene_id should cost 10 structure points, got %d (issues: %v)", report2.Structure, report2.Issues)
+	}
+	found := false
+	for _, issue := range report2.Issues {
+		if strings.Contains(issue, "缺号") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected missing scene_id issue, got %v", report2.Issues)
+	}
+}
+
 func TestBuildLightweightStoryQualityReportNil(t *testing.T) {
 	report := buildLightweightStoryQualityReport(nil, nil, "")
 	if report.Score != 0 || len(report.Issues) == 0 {
