@@ -2205,40 +2205,41 @@ func runLightweightStoryGeneration(projectID uint, req models.AutoGenerateReques
 
 	task.GlobalTaskManager.UpdateTaskProgress(taskID, 40, "正在调用 LLM 一次性生成角色与镜头")
 
-	raw, err := requestLightweightStoryOnce(provider, systemPrompt, userPrompt, taskID)
-	if err != nil {
-		Log(
-			LogLevelError,
-			llmLogMessage("LLM Error", provider),
-			fmt.Sprintf("Lightweight story generation failed: %v", err),
-		)
-		return nil, err
-	}
-
-	Log(
-		LogLevelInfo,
-		llmLogMessage("LLM 完整返回(轻量剧情一次性生成)", provider),
-		raw,
-	)
-
 	task.GlobalTaskManager.UpdateTaskProgress(taskID, 68, "校验 LLM 返回结构")
 
-	payload, err := parseStrictLightweightStoryResponse(raw)
+	payload, _, err := runLightweightStoryGenerationWithRetry(
+		systemPrompt,
+		userPrompt,
+		continuationPartial,
+		func(system string, user string) (string, error) {
+			raw, requestErr := requestLightweightStoryOnce(provider, system, user, taskID)
+			if requestErr != nil {
+				Log(
+					LogLevelError,
+					llmLogMessage("LLM Error", provider),
+					fmt.Sprintf("Lightweight story generation failed: %v", requestErr),
+				)
+				return "", requestErr
+			}
+			Log(
+				LogLevelInfo,
+				llmLogMessage("LLM 完整返回(轻量剧情一次性生成)", provider),
+				raw,
+			)
+			return raw, nil
+		},
+		func(raw string) (*lightweightStoryResponse, error) {
+			return parseStrictLightweightStoryResponse(raw)
+		},
+		func(p *lightweightStoryResponse) error {
+			return validateLightweightStoryResponse(p, existingCharacters, req.GenerationMode, narrativeNodeCount)
+		},
+		3,
+	)
 	if err != nil {
 		Log(
 			LogLevelError,
-			llmLogMessage("LLM 返回解析失败(轻量剧情一次性生成)", provider),
-			err.Error(),
-		)
-		return nil, err
-	}
-	if continuationPartial != nil {
-		payload = mergeLightweightStoryContinuation(continuationPartial, payload)
-	}
-	if err := validateLightweightStoryResponse(payload, existingCharacters, req.GenerationMode, narrativeNodeCount); err != nil {
-		Log(
-			LogLevelError,
-			llmLogMessage("LLM 返回校验失败(轻量剧情一次性生成)", provider),
+			llmLogMessage("LLM 返回解析或校验失败(轻量剧情一次性生成)", provider),
 			err.Error(),
 		)
 		return nil, err
