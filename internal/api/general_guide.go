@@ -640,9 +640,13 @@ func CreateGeneralGuideProject(c *gin.Context) {
 			if err := tx.Create(&ref).Error; err != nil {
 				return err
 			}
-			ext := strings.ToLower(filepath.Ext(file.Filename))
+			safeName := filepath.Base(file.Filename)
+			ext := strings.ToLower(filepath.Ext(safeName))
 			if ext == "" {
 				ext = ".png"
+			}
+			if safeName == "" || safeName == "." || safeName == ".." {
+				safeName = fmt.Sprintf("upload_%d%s", ref.ID, ext)
 			}
 			absPath := generalGuideReferencePath(code, ref.ID, ext)
 			if err := c.SaveUploadedFile(file, absPath); err != nil {
@@ -687,6 +691,10 @@ func UpdateGeneralGuideProject(c *gin.Context) {
 
 	name := strings.TrimSpace(c.PostForm("name"))
 	code := strings.TrimSpace(c.PostForm("code"))
+	if strings.Contains(code, "..") || strings.ContainsAny(code, "/\\") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project_code"})
+		return
+	}
 	description := strings.TrimSpace(c.PostForm("description"))
 	presenterGender := normalizeGeneralGuidePresenterGender(c.PostForm("presenter_gender"))
 	presenterPersona := normalizeGeneralGuidePresenterPersona(c.PostForm("presenter_persona"), presenterGender)
@@ -1054,7 +1062,8 @@ func UpdateGeneralGuideScene(c *gin.Context) {
 		}
 	}
 	if hasNewReference {
-		ext := strings.ToLower(filepath.Ext(file.Filename))
+		safeName := filepath.Base(file.Filename)
+		ext := strings.ToLower(filepath.Ext(safeName))
 		if ext == "" {
 			ext = ".png"
 		}

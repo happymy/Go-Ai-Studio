@@ -217,9 +217,14 @@ func DeleteCharacter(c *gin.Context) {
 // UploadFile handles file uploads
 func UploadFile(c *gin.Context) {
 	// Get project code from form data to organize files
-	projectCode := c.PostForm("project_code")
+	projectCode := strings.TrimSpace(c.PostForm("project_code"))
 	if projectCode == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "project_code is required"})
+		return
+	}
+	// Sanitize projectCode to prevent path traversal
+	if strings.Contains(projectCode, "..") || strings.ContainsAny(projectCode, "/\\") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project_code"})
 		return
 	}
 
@@ -237,8 +242,17 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Generate unique filename
-	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), file.Filename)
+	// Generate unique filename (sanitize to prevent path traversal)
+	safeName := filepath.Base(file.Filename)
+	// If name becomes empty or just dots, use a default
+	if safeName == "" || safeName == "." || safeName == ".." {
+		ext := filepath.Ext(file.Filename)
+		if ext == "" {
+			ext = ".bin"
+		}
+		safeName = fmt.Sprintf("upload%s", ext)
+	}
+	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), safeName)
 	savePath := filepath.Join(uploadDir, filename)
 
 	if err := c.SaveUploadedFile(file, savePath); err != nil {

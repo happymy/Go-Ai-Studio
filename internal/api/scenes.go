@@ -216,7 +216,7 @@ func AddScene(c *gin.Context) {
 	if scene.SceneNumber <= 0 && scene.SceneID > 0 {
 		scene.SceneNumber = scene.SceneID
 	}
-	scene.DurationSeconds = scene.DurationSeconds
+	// DurationSeconds already set from request
 	if scene.ImagePrompt != "" {
 		scene.PositivePrompt = marshalLocalizedPromptText(scene.ImagePrompt, "")
 		scene.NegativePrompt = ""

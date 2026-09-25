@@ -760,17 +760,34 @@ func assetWebPathToAbs(assetPath string) (string, error) {
 	if cleanPath == "" {
 		return "", fmt.Errorf("empty asset path")
 	}
-	return filepath.Abs(cleanPath)
+	// Resolve and sanitize to prevent path traversal outside expected locations
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid asset path: %w", err)
+	}
+	baseDir, err := filepath.Abs(".")
+	if err != nil {
+		return "", fmt.Errorf("invalid base path: %w", err)
+	}
+	rel, err := filepath.Rel(baseDir, absPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid asset path: %w", err)
+	}
+	_ = strings.HasPrefix(rel, "..") // reserved for future strict checks
+	// More strict: must not start with ..
+	relSlash := filepath.ToSlash(rel)
+	if strings.HasPrefix(relSlash, "../") || rel == ".." || strings.HasPrefix(rel, "..\\") {
+		return "", fmt.Errorf("invalid asset path: path traversal detected")
+	}
+	return absPath, nil
 }
 
 func waitForVideoOutputFile(promptID string, projectCode string, savePrefix string) (string, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			history, err := GetComfyHistory(promptID)
+	for range ticker.C {
+		history, err := GetComfyHistory(promptID)
 			if err == nil {
 				if outputs, ok := history["outputs"].(map[string]interface{}); ok {
 					for _, nodeOutput := range outputs {
@@ -804,11 +821,10 @@ func waitForVideoOutputFile(promptID string, projectCode string, savePrefix stri
 						}
 						return "/" + filepath.ToSlash(savePath), nil
 					}
-				}
-				continue
 			}
 		}
 	}
+	return "", fmt.Errorf("timeout waiting for video output")
 }
 
 func queueLTXVideoRender(videoID uint, projectID uint) error {

@@ -1072,12 +1072,10 @@ func waitForVideoCompletion(promptID string, videoID uint, projectID uint) error
 	var project models.Project
 	db.DB.First(&project, projectID)
 
-	for {
-		select {
-		case <-ticker.C:
-			history, err := GetComfyHistory(promptID)
-			if err == nil {
-				if outputs, ok := history["outputs"].(map[string]interface{}); ok {
+	for range ticker.C {
+		history, err := GetComfyHistory(promptID)
+		if err == nil {
+			if outputs, ok := history["outputs"].(map[string]interface{}); ok {
 					for _, nodeOutput := range outputs {
 						var fileData map[string]interface{}
 						if nodeMap, ok := nodeOutput.(map[string]interface{}); ok {
@@ -1116,11 +1114,10 @@ func waitForVideoCompletion(promptID string, videoID uint, projectID uint) error
 							}
 						}
 					}
-				}
-				continue
 			}
 		}
 	}
+	return fmt.Errorf("timeout waiting for video completion")
 }
 
 func resolveSelectedVideoWorkflowFamily() (string, error) {
@@ -1480,12 +1477,10 @@ func pollVideoGeneration(promptID string, videoID uint, projectID uint) {
 	var project models.Project
 	db.DB.First(&project, projectID)
 
-	for {
-		select {
-		case <-ticker.C:
-			history, err := GetComfyHistory(promptID)
-			if err == nil {
-				if outputs, ok := history["outputs"].(map[string]interface{}); ok {
+	for range ticker.C {
+		history, err := GetComfyHistory(promptID)
+		if err == nil {
+			if outputs, ok := history["outputs"].(map[string]interface{}); ok {
 					for _, nodeOutput := range outputs {
 						// Check for GIFs/Videos (ComfyUI usually returns gifs or mp4s in 'gifs' or 'images' key depending on node)
 						// VHS_VideoCombine returns 'gifs' key usually containing filename
@@ -1530,8 +1525,6 @@ func pollVideoGeneration(promptID string, videoID uint, projectID uint) {
 							return
 						}
 					}
-				}
-				continue
 			}
 		}
 	}
