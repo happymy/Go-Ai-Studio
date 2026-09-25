@@ -361,9 +361,16 @@ func buildCharacterPreviewPositivePrompt(char models.Character) (string, error) 
 		identityParts = append(identityParts, era)
 	}
 
-	baseClothing := "服装采用简洁基础展示服装，不加入剧情动作，不手持物品"
-	if strings.TrimSpace(char.Era) != "" || strings.TrimSpace(char.Country) != "" {
-		baseClothing = fmt.Sprintf("服装采用符合%s%s的简洁基础展示服装，不加入剧情动作，不手持物品",
+	// 服装/体态/装备描述：
+	// 新规范（buildCharacterAssetRules 三锚点分工）下 appearance 只保留脸部与身材锚点，
+	// 固定服装、体态与稳定装备写在 fingerprint 字段。全身预览图必须带上 fingerprint，
+	// 否则新角色人物图会丢失固定服装（如护士服、校服、制服等固定穿搭）。
+	// 旧数据 fingerprint 为空时，回退为按时代/国别的简洁基础展示服装。
+	clothing := "服装采用简洁基础展示服装，不加入剧情动作，不手持物品"
+	if bodyAnchor := strings.TrimSpace(char.Fingerprint); bodyAnchor != "" {
+		clothing = "体态与固定服装按以下锚点出镜：" + bodyAnchor + "，不加入剧情动作，不手持物品"
+	} else if strings.TrimSpace(char.Era) != "" || strings.TrimSpace(char.Country) != "" {
+		clothing = fmt.Sprintf("服装采用符合%s%s的简洁基础展示服装，不加入剧情动作，不手持物品",
 			strings.TrimSpace(char.Country),
 			strings.TrimSpace(char.Era),
 		)
@@ -393,7 +400,7 @@ func buildCharacterPreviewPositivePrompt(char models.Character) (string, error) 
 	}
 	parts = append(parts,
 		appearance,
-		baseClothing,
+		clothing,
 		"禁止字幕，禁止画面文字，禁止水印，禁止界面元素",
 	)
 	return strings.Join(parts, "，"), nil
